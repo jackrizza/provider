@@ -1,3 +1,10 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 use serde::Deserialize;
 use serde_json::{self, Value, json};
 use std::sync::{Arc, Mutex};

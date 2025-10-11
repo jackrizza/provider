@@ -1,3 +1,10 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 use std::io::{self, BufRead, BufReader, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;

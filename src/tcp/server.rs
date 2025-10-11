@@ -1,3 +1,10 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 use axum::Router;
 use axum::routing::{get, post};
 use log::{error, info, warn};

@@ -1,3 +1,10 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 

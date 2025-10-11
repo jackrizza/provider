@@ -1,5 +1,9 @@
-// src/providers/yahoo_finance.rs
+/*
 
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
 use crate::models::Entity;
 use crate::query::{EntityFilter, EntityInProvider};
 use crate::schema::entities::dsl::{

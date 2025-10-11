@@ -1,3 +1,10 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 use diesel::prelude::*;
 
 use diesel::r2d2::{ConnectionManager, Pool};

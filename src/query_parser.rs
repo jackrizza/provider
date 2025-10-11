@@ -1,4 +1,10 @@
-// src/query_parser.rs
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
 
 use crate::query::{EntityFilter, EntityInProvider, QueryEnvelope, QueryEnvelopePayload};
 use std::time::{SystemTime, UNIX_EPOCH};

@@ -396,5 +396,4 @@ axum::serve(listener, app.into_make_service()).await?;
 ---
 
 ## License
-
-MIT (or your choice). Add a `LICENSE` file if needed.
+This project is licensed under the **AGPL-3.0-only** license. See the [LICENSE](./LICENSE) file for details.
