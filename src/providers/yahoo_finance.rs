@@ -4,14 +4,9 @@ SPDX-License-Identifier: AGPL-3.0-only
 Copyright (c) 2025 Augustus Rizza
 
 */
+use crate::establish_connection;
 use crate::models::Entity;
 use crate::query::{EntityFilter, EntityInProvider};
-use crate::schema::entities::dsl::{
-    data as col_data, entities as entities_table, etag as col_etag, fetched_at as col_fetched_at,
-    id as col_id, last_error as col_last_error, refresh_after as col_refresh_after,
-    source as col_source, state as col_state, tags as col_tags, updated_at as col_updated_at,
-};
-use crate::{establish_connection, schema::entities};
 use diesel::prelude::*;
 use diesel::{QueryDsl, RunQueryDsl, SqliteConnection};
 use polars::prelude::*;
@@ -701,7 +696,7 @@ fn concat_and_trim(
     Ok(out)
 }
 
-fn align_columns(mut dfs: Vec<DataFrame>) -> Result<Vec<DataFrame>, String> {
+fn _align_columns(mut dfs: Vec<DataFrame>) -> Result<Vec<DataFrame>, String> {
     use std::collections::BTreeSet;
     let mut all: BTreeSet<String> = BTreeSet::new();
     for df in &dfs {

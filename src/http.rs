@@ -9,17 +9,15 @@ use serde::Deserialize;
 use serde_json::{self, Value, json};
 use std::sync::{Arc, Mutex};
 
-use crate::providers::{ProviderTrait, Providers};
+use crate::providers::Providers;
 use crate::pyadapter::PyProviderAdapter;
 
 // =================== HTTP (AXUM) HANDLERS ===================
 
 use axum::{
-    Json, Router,
+    Json,
     extract::{Path, State},
-    routing::{get, post},
 };
-use std::net::SocketAddr;
 
 #[derive(Clone)]
 pub struct AppState {

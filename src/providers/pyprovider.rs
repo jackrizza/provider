@@ -5,13 +5,12 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
-use pyo3::types::{PyAnyMethods, PyModule};
 use pyo3::Python;
+use pyo3::types::{PyAnyMethods, PyModule};
 
 use super::ProviderTrait;
 use crate::pyadapter::PyProviderAdapter;
-use crate::query::{EntityFilter, EntityInProvider};
-
+use crate::query::EntityInProvider;
 
 // Safety: we confine all Python interaction within GIL sections.
 // The struct only holds a GIL-independent `Py<PyAny>` handle.

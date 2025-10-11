@@ -5,8 +5,6 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
-use diesel::prelude::*;
-
 use diesel::r2d2::{ConnectionManager, Pool};
 use diesel::sqlite::SqliteConnection;
 
