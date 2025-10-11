@@ -7,12 +7,11 @@ use crate::tcp::client::{connect, send_parsed_query_line};
 
 use crossterm::event::KeyEventKind;
 use std::collections::HashMap;
-use std::io::{self, BufRead, BufReader, Write};
+use std::io::{self, BufReader};
 use std::net::TcpStream;
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use crate::query_parser::parse_line_to_envelope;
 use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind, now_ms};
 
 use crossterm::event::{
@@ -50,14 +49,14 @@ struct App {
     input: String,
     cursor: usize,
     messages: Vec<String>, // rendered lines
-    scroll: u16,
+    _scroll: u16,
 
     // history (for up/down)
     history: Vec<String>,
     history_idx: Option<usize>,
 
     // misc
-    last_tick: Instant,
+    _last_tick: Instant,
     scroll_top: u16,
     autoscroll: bool,
 }
@@ -69,7 +68,7 @@ impl App {
 
     fn reconnect(&mut self) -> io::Result<()> {
         let addr = self.addr.clone();
-        let mut s = connect(&addr)?;
+        let s = connect(&addr)?;
         s.set_read_timeout(Some(Duration::from_secs(10))).ok();
         s.set_write_timeout(Some(Duration::from_secs(5))).ok();
         self.reader = BufReader::new(s.try_clone()?);
@@ -81,7 +80,7 @@ impl App {
 // -------------------- Public entry --------------------
 
 pub fn run_client(addr: &str) -> io::Result<()> {
-    let mut stream = connect(addr)?;
+    let stream = connect(addr)?;
     stream.set_read_timeout(Some(Duration::from_secs(10))).ok();
     stream.set_write_timeout(Some(Duration::from_secs(5))).ok();
     let reader = BufReader::new(stream.try_clone()?);
@@ -99,10 +98,10 @@ pub fn run_client(addr: &str) -> io::Result<()> {
             format!("Query TUI connected → {}", addr),
             "Type a query and press Enter. Commands start with ':' (try :help)".to_string(),
         ],
-        scroll: 0,
+        _scroll: 0,
         history: load_history(),
         history_idx: None,
-        last_tick: Instant::now(),
+        _last_tick: Instant::now(),
         scroll_top: 0,
         autoscroll: true,
     };
@@ -1014,4 +1013,3 @@ fn style_line(s: &str) -> Line<'_> {
     }
     Line::from(s.to_string()).style(normal)
 }
-

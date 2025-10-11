@@ -231,7 +231,7 @@ impl ProviderTrait for PyProviderAdapter {
                 if let Some(e) = self.db_get_one(id)? {
                     return Ok(vec![e]);
                 }
-                let mut fetched = self.py_fetch(&req)?;
+                let fetched = self.py_fetch(&req)?;
                 if !fetched.is_empty() {
                     self.db_upsert_many(&fetched)?;
                 }
