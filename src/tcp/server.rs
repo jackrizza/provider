@@ -68,6 +68,7 @@ impl ProviderServer {
     /// Start HTTP (Axum) in its own Tokio runtime thread, then run TCP accept loop.
     pub fn listen(&mut self) {
         let state = AppState {
+            db_path: self.db_path.clone(),
             providers: Arc::clone(&self.providers),
         };
         let http_addr: SocketAddr = self

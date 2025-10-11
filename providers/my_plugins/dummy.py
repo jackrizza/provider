@@ -9,7 +9,7 @@ class Provider:
             "id": "dummy_py:TEST:2025-09-01..2025-09-10",
             "source": "dummy_py",
             "tags": "[\"ticker=TEST\",\"from=2025-09-01T00:00:00Z\",\"to=2025-09-10T00:00:00Z\"]",
-            "data": "[]",
+            "data": "[{\"timestamp\":\"2025-09-01T00:00:00Z\",\"value\":14},{\"timestamp\":\"2025-09-02T00:00:00Z\",\"value\":2},{\"timestamp\":\"2025-09-03T00:00:00Z\",\"value\":3},{\"timestamp\":\"2025-09-04T00:00:00Z\",\"value\":4},{\"timestamp\":\"2025-09-05T00:00:00Z\",\"value\":5}]",
             "etag": "deadbeef",
             "fetched_at": "2025-09-10T00:00:00Z",
             "refresh_after": "2025-09-11T00:00:00Z",

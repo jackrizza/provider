@@ -9,8 +9,8 @@ use serde::Deserialize;
 use serde_json::{self, Value, json};
 use std::sync::{Arc, Mutex};
 
-use crate::providers::Providers;
-use crate::pyadapter::PyProviderAdapter;
+use crate::providers::{Providers, pyprovider::PyProviderAdapter};
+// use crate::pyadapter::PyProviderAdapter;
 
 // =================== HTTP (AXUM) HANDLERS ===================
 
@@ -21,6 +21,7 @@ use axum::{
 
 #[derive(Clone)]
 pub struct AppState {
+    pub db_path: String,
     pub providers: Arc<Mutex<Providers>>,
 }
 
@@ -46,9 +47,9 @@ pub async fn http_load_plugin(
     Json(req): Json<LoadPluginReq>,
 ) -> Json<Value> {
     // NOTE: if your PyProviderAdapter is in crate::providers::pyprovider
-    match PyProviderAdapter::inner_load(&req.module, &req.class) {
+    match PyProviderAdapter::inner_load(&req.module, &req.class, &state.db_path) {
         Ok(adapter) => {
-            let name = req.name.unwrap_or_else(|| adapter.name().to_string());
+            let name = req.name.unwrap_or_else(|| adapter.name.to_string());
             state
                 .providers
                 .lock()

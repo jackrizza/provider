@@ -3,6 +3,16 @@ name = "provider"
 version = "0.1.0"
 edition = "2024"
 
+
+[features]
+# Opt-in features; pick one at a time.
+cli-client = []
+lib-client = []
+
+# Optionally set a default:
+default = ["cli-client"]
+
+
 [dependencies]
 crossbeam = "0.8.4"
 polars = { version = "0.51.0", features = [
@@ -53,3 +63,16 @@ axum = "0.7"
 # Python embedding
 pyo3 = { version = "0.22", features = ["auto-initialize"] }
 # (Optional) If you later want nicer serde bridging: pyo3-serde = "0.7"
+diesel_migrations = { version = "2.1", features = ["sqlite"] }  # <-- add this
+# tui
+ratatui = "0.26"
+crossterm = "0.27"
+
+# # Gate TUI deps behind feature to slim lib builds:
+# [features]
+# cli-client = ["dep:ratatui", "dep:crossterm"]
+# lib-client = []
+
+# [package.metadata.docs.rs]
+# # Build docs with the lib-client feature so examples compile.
+# features = ["lib-client"]
