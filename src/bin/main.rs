@@ -183,3 +183,12 @@ fn seed_pythonpath(base_dir: &Path) {
     unsafe { env::set_var("PYTHONPATH", &new_val) };
     info!("PYTHONPATH seeded with: {}", additions);
 }
+
+#[cfg(feature = "lib-client")]
+fn main() {
+    println!(
+        "lib-client is set as a feature which allows the library to be used in a client application."
+    );
+    println!("If you are trying to use the cli, you can run the following command:");
+    println!("cargo run -- --client --features cli-client");
+}

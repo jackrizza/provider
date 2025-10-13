@@ -34,8 +34,8 @@ pub fn establish_connection(db_path: &str) -> DbPool {
 
     // Optional: set useful SQLite PRAGMAs once.
     {
-        use diesel::RunQueryDsl;
         use diesel::sql_query;
+        use diesel::RunQueryDsl;
 
         let mut conn = pool.get().expect("pool.get() failed to set PRAGMAs");
         let _ = sql_query("PRAGMA foreign_keys = ON").execute(&mut conn);

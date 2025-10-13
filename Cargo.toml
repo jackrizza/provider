@@ -10,7 +10,7 @@ cli-client = []
 lib-client = []
 
 # Optionally set a default:
-default = ["cli-client"]
+default = ["lib-client"]
 
 
 [dependencies]
@@ -22,7 +22,7 @@ polars = { version = "0.51.0", features = [
     "serde",
     "diagonal_concat",
 ] }
-serde = { version = "1.0.228", features = ["derive"] }
+serde = { version = "1.0.22", features = ["derive"] }
 
 diesel = { version = "2.2.0", features = [
     "sqlite",
