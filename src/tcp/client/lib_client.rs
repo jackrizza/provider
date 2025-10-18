@@ -6,6 +6,8 @@ use crate::models::Entity;
 use crate::tcp::client::{connect, send_parsed_query_line};
 
 /// A simple programmatic client for Provider TCP API.
+
+#[derive(Debug)]
 pub struct Client {
     addr: String,
     stream: TcpStream,
