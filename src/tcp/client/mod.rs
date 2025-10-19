@@ -84,3 +84,59 @@ pub fn send_parsed_query_line(
         }
     }
 }
+
+/// Send one *raw shell line* (no pre-parse) and read one line response.
+/// This matches what the TUI/CLI sends to the server.
+pub fn send_raw_line(
+    line: &str,
+    addr: &str,
+    stream: &mut TcpStream,
+    reader: &mut BufReader<TcpStream>,
+) -> io::Result<String> {
+    // Always append a newline; the server is line-delimited.
+    let mut buf = String::with_capacity(line.len() + 1);
+    buf.push_str(line);
+    if !buf.ends_with('\n') {
+        buf.push('\n');
+    }
+
+    fn write_then_read(
+        json: &str,
+        stream: &mut TcpStream,
+        reader: &mut BufReader<TcpStream>,
+    ) -> io::Result<String> {
+        use std::io::{BufRead, Write};
+        stream.write_all(json.as_bytes())?;
+        stream.flush()?;
+        let mut resp = String::new();
+        let n = reader.read_line(&mut resp)?;
+        if n == 0 {
+            return Err(io::Error::new(
+                io::ErrorKind::UnexpectedEof,
+                "server closed connection",
+            ));
+        }
+        Ok(resp.trim_end_matches(&['\r', '\n'][..]).to_string())
+    }
+
+    match write_then_read(&buf, stream, reader) {
+        Ok(resp) => Ok(resp),
+        Err(e) => {
+            eprintln!("write/read error: {e} — attempting reconnect …");
+            let read_to = stream.read_timeout().ok().flatten();
+            let write_to = stream.write_timeout().ok().flatten();
+
+            let new_stream = connect(addr)?;
+            if let Some(t) = read_to {
+                let _ = new_stream.set_read_timeout(Some(t));
+            }
+            if let Some(t) = write_to {
+                let _ = new_stream.set_write_timeout(Some(t));
+            }
+
+            *stream = new_stream;
+            *reader = BufReader::new(stream.try_clone()?);
+            write_then_read(&buf, stream, reader)
+        }
+    }
+}

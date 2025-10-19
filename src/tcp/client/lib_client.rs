@@ -4,6 +4,7 @@ use std::net::TcpStream;
 
 use crate::models::Entity;
 use crate::tcp::client::{connect, send_parsed_query_line};
+use crate::tcp::response::ResponseEnvelope;
 
 /// A simple programmatic client for Provider TCP API.
 
@@ -88,8 +89,9 @@ impl Client {
         let responses = self.get_multiple_responses(lines)?;
         let mut results = Vec::with_capacity(responses.len());
         for (name, json) in responses {
-            let entity: Entity = serde_json::from_value(json)?;
-            let value: T = serde_json::from_str(&entity.data)?;
+            let entity: ResponseEnvelope = serde_json::from_value(json)?;
+            println!("Received JSON: {:#?}", entity);
+            let value: T = serde_json::from_str(&entity.result.unwrap_or_default().to_string())?;
             results.push((name, value));
         }
         Ok(results)

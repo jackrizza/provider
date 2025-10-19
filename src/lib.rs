@@ -17,6 +17,7 @@ pub mod pyadapter;
 pub mod query_parser;
 pub mod schema;
 pub mod tcp;
+pub mod tests;
 
 /// Convenient alias for your app.
 pub type DbPool = Pool<ConnectionManager<SqliteConnection>>;
@@ -34,8 +35,8 @@ pub fn establish_connection(db_path: &str) -> DbPool {
 
     // Optional: set useful SQLite PRAGMAs once.
     {
-        use diesel::sql_query;
         use diesel::RunQueryDsl;
+        use diesel::sql_query;
 
         let mut conn = pool.get().expect("pool.get() failed to set PRAGMAs");
         let _ = sql_query("PRAGMA foreign_keys = ON").execute(&mut conn);
