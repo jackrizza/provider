@@ -90,7 +90,6 @@ impl Client {
         let mut results = Vec::with_capacity(responses.len());
         for (name, json) in responses {
             let entity: ResponseEnvelope = serde_json::from_value(json)?;
-            println!("Received JSON: {:#?}", entity);
             let value: T = serde_json::from_str(&entity.result.unwrap_or_default().to_string())?;
             results.push((name, value));
         }
