@@ -59,7 +59,7 @@ scraper = "0.18"
 
 # HTTP server
 axum = "0.7"
-
+axum-extra = { version = "0.9", features = ["cookie"] }
 # Python embedding
 pyo3 = { version = "0.22", features = ["auto-initialize"] }
 # (Optional) If you later want nicer serde bridging: pyo3-serde = "0.7"
@@ -73,8 +73,7 @@ rand = "0.8"
 argon2 = "0.5"
 rand_core = "0.6"
 thiserror = "1"
-
-
+maud = "0.27.0"
 # # Gate TUI deps behind feature to slim lib builds:
 # [features]
 # cli-client = ["dep:ratatui", "dep:crossterm"]

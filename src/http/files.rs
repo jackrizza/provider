@@ -5,7 +5,7 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
-use super::AppState;
+use crate::http::AppState;
 use crate::providers::pyprovider::PyProviderAdapter;
 use serde::Deserialize;
 use serde_json::{self, Value, json};
@@ -32,6 +32,7 @@ pub struct LoadPluginReq {
 /// POST /plugins/load {module, class[, name] }
 /// Loads a Python Provider dynamically and registers it.
 /// Returns the registered name.
+
 pub async fn http_load_plugin(
     State(state): State<AppState>,
     Json(req): Json<LoadPluginReq>,
@@ -45,8 +46,10 @@ pub async fn http_load_plugin(
                 .lock()
                 .unwrap()
                 .add_provider(name.clone(), Box::new(adapter));
+
             Json(json!({ "ok": true, "name": name }))
         }
+
         Err(e) => {
             Json(json!({ "ok": false, "error": { "code": "plugin_load_failed", "message": e } }))
         }

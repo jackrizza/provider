@@ -27,8 +27,15 @@ use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
 
 use crate::http::{
     AppState,
-    files::{http_list_providers, http_load_plugin, http_ping_provider},
-    interface::init::{http_setup_form, http_setup_submit},
+    files::{http_load_plugin, http_ping_provider},
+    interface::{
+        account::{http_my_account, http_my_account_refresh},
+        init::{http_setup_form, http_setup_submit},
+        landing::http_landing,
+        login::{http_login_form, http_login_submit, http_signout},
+        providers::http_list_providers,
+    },
+    require_login,
 };
 use crate::pyadapter::add_dirs_to_syspath;
 
@@ -99,12 +106,27 @@ impl ProviderServer {
                     .expect("tokio runtime");
 
                 rt.block_on(async move {
-                    let app = Router::new()
+                    use axum::middleware;
+
+                    let public = Router::new()
+                        // setup is public ONLY when no users; handler will deal with that
+                        .route("/", get(http_landing))
+                        .route("/setup", get(http_setup_form).post(http_setup_submit))
+                        .route("/login", get(http_login_form).post(http_login_submit))
+                        .route("/sign-out", get(http_signout));
+
+                    let protected = Router::new()
                         .route("/providers", get(http_list_providers))
                         .route("/providers/:name/ping", get(http_ping_provider))
                         .route("/plugins/load", post(http_load_plugin))
-                        .route("/setup", get(http_setup_form).post(http_setup_submit))
-                        .with_state(state_clone);
+                        .route("/my-account", get(http_my_account))
+                        .route("/my-account/refresh", post(http_my_account_refresh))
+                        .route_layer(middleware::from_fn_with_state(
+                            state_clone.clone(),
+                            require_login,
+                        ));
+
+                    let app = public.merge(protected).with_state(state_clone);
 
                     info!("HTTP listening on {}", http_addr);
 

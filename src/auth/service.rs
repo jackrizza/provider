@@ -15,6 +15,11 @@ use crate::auth::repo::AuthRepo;
 use crate::auth::utils;
 use crate::models::{Auth, NewAuth};
 
+pub struct TokenPair {
+    pub access_token: String,
+    pub refresh_token: String,
+}
+
 pub struct AuthService {
     pool: DbPool,
     // whether auth is enabled (from your CLI flag)
@@ -186,5 +191,58 @@ impl AuthService {
     /// Whether auth is enabled at runtime
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+
+    pub fn refresh_access_token(&self, old_access_token: &str) -> Result<TokenPair, String> {
+        // 1) get conn
+        let mut conn = self.conn().map_err(|e| format!("connection error: {e}"))?;
+        let mut repo = AuthRepo::new(&mut conn);
+
+        // 2) find user by current access token
+        let user = repo
+            .find_by_access_token(old_access_token)
+            .map_err(|e| format!("db error: {e}"))?
+            .ok_or_else(|| "user not found for this access token".to_string())?;
+
+        // 3) check refresh token expiry
+        // some rows might have empty string → treat as expired
+        let refresh_exp_str = user.refresh_token_expires_at.trim();
+        if refresh_exp_str.is_empty() {
+            return Err("refresh token expired or missing".to_string());
+        }
+
+        let now = chrono::Utc::now();
+        let exp = chrono::DateTime::parse_from_rfc3339(refresh_exp_str)
+            .map_err(|e| format!("bad refresh_token_expires_at: {e}"))?
+            .with_timezone(&chrono::Utc);
+
+        if now > exp {
+            return Err("refresh token expired".to_string());
+        }
+
+        // 4) generate new tokens + expirations
+        let access_token = utils::new_access_token();
+        let refresh_token = utils::new_refresh_token();
+        let (access_exp, refresh_exp) = utils::token_expirations();
+
+        // 5) update DB
+        let user_id = user
+            .id
+            .as_ref()
+            .ok_or_else(|| "user has no id".to_string())?;
+        repo.update_tokens(
+            user_id,
+            &access_token,
+            &access_exp,
+            &refresh_token,
+            &refresh_exp,
+        )
+        .map_err(|e| format!("failed to update tokens: {e}"))?;
+
+        // 6) return the pair
+        Ok(TokenPair {
+            access_token,
+            refresh_token,
+        })
     }
 }

@@ -123,7 +123,6 @@ fn main() {
             base_dir.display()
         );
 
-        // 👇 pass the auth service we just made
         provider::tcp::server::ProviderServer::new(
             args.tcp_addr,
             args.http_addr,
