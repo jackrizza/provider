@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 use diesel::sqlite::SqliteConnection;
 use diesel_migrations::{EmbeddedMigrations, MigrationHarness, embed_migrations};
 use log::{error, info};
+
 // Embed migrations from the default "./migrations" folder
 pub const MIGRATIONS: EmbeddedMigrations = embed_migrations!("./migrations");
 
@@ -50,6 +51,10 @@ struct Args {
     /// Defaults to current working directory in server mode.
     #[arg(long)]
     base: Option<String>,
+
+    /// Enable authentication
+    #[arg(long)]
+    auth: bool,
 }
 
 #[cfg(feature = "cli-client")]
@@ -76,7 +81,33 @@ fn main() {
             std::process::exit(1);
         }
 
-        // 2) Seed PYTHONPATH to help find providers
+        // 👇 build a pool and auth service here
+        let pool = provider::establish_connection(&db_path);
+        let auth_service = provider::auth::AuthService::new(pool.clone(), args.auth);
+
+        // if auth is on, check if there are users
+        if args.auth {
+            match auth_service.has_any_users() {
+                Ok(false) => {
+                    // no users yet
+                    println!("============================================================");
+                    println!("🔐 Auth is ENABLED but there are no users in the database.");
+                    println!(
+                        "👉 Open this in a browser to create the first user: http://{}/setup",
+                        args.http_addr
+                    );
+                    println!("============================================================");
+                }
+                Ok(true) => {
+                    info!("Auth is enabled and at least one user exists.");
+                }
+                Err(e) => {
+                    error!("Failed to check existing users: {e}");
+                }
+            }
+        }
+
+        // 2) Seed PYTHONPATH
         let base_dir = args
             .base
             .clone()
@@ -92,7 +123,14 @@ fn main() {
             base_dir.display()
         );
 
-        provider::tcp::server::ProviderServer::new(args.tcp_addr, args.http_addr, db_path).listen();
+        // 👇 pass the auth service we just made
+        provider::tcp::server::ProviderServer::new(
+            args.tcp_addr,
+            args.http_addr,
+            db_path,
+            auth_service,
+        )
+        .listen();
     } else if args.client {
         // client mode (no DB init needed)
         info!("Starting client (TCP={})", args.tcp_addr);

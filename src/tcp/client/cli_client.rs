@@ -3,7 +3,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 Copyright (c) 2025 Augustus Rizza
 */
 
-use crate::tcp::client::{connect, send_parsed_query_line};
+use crate::tcp::client::connect;
 
 use crossterm::event::KeyEventKind;
 use std::collections::HashMap;
@@ -36,6 +36,8 @@ use std::io::Cursor;
 // HTTP client for plugin loader
 use reqwest::blocking::Client as HttpClient;
 
+use crate::tcp::client::{AuthConfig, send_parsed_query_line_with_auth};
+
 // -------------------- App State --------------------
 
 struct App {
@@ -45,10 +47,13 @@ struct App {
     reader: BufReader<TcpStream>,
     http: HttpClient,
 
+    // auth
+    auth: AuthConfig, // 👈 current access token (if any)
+
     // UI state
     input: String,
     cursor: usize,
-    messages: Vec<String>, // rendered lines
+    messages: Vec<String>,
     _scroll: u16,
 
     // history (for up/down)
@@ -75,6 +80,14 @@ impl App {
         self.stream = s;
         Ok(())
     }
+
+    fn set_token(&mut self, token: String) {
+        self.auth = AuthConfig::new(token);
+    }
+
+    fn clear_token(&mut self) {
+        self.auth = AuthConfig::default();
+    }
 }
 
 // -------------------- Public entry --------------------
@@ -92,6 +105,7 @@ pub fn run_client(addr: &str) -> io::Result<()> {
         stream,
         reader,
         http: HttpClient::new(),
+        auth: load_token(), // 👈 load token from disk if any
         input: String::new(),
         cursor: 0,
         messages: vec![
@@ -126,8 +140,9 @@ pub fn run_client(addr: &str) -> io::Result<()> {
     .ok();
     terminal.show_cursor().ok();
 
-    // persist history
+    // persist history + token
     save_history(&app.history);
+    save_token(&app.auth);
 
     res
 }
@@ -143,18 +158,15 @@ fn run_loop(
     loop {
         terminal.draw(|f| ui(f, app))?;
 
-        // poll lets us avoid blocking forever on read(), so UI stays responsive
         if crossterm::event::poll(tick_rate)? {
             if let Event::Key(key) = event::read()? {
-                // only react to actual key presses
                 if key.kind == KeyEventKind::Press {
                     if handle_key(app, key)? {
-                        break; // true means "quit"
+                        break;
                     }
                 }
             }
         }
-        // (optional) you can handle Event::Resize here if needed
     }
     Ok(())
 }
@@ -179,6 +191,13 @@ fn ui(f: &mut ratatui::Frame, app: &App) {
 }
 
 fn render_status(f: &mut ratatui::Frame, area: Rect, app: &App) {
+    // show auth state
+    let auth_span = if app.auth.access_token.is_some() {
+        Span::styled("auth:ON", Style::default().fg(Color::Green))
+    } else {
+        Span::styled("auth:OFF", Style::default().fg(Color::Red))
+    };
+
     let line = Line::from(vec![
         Span::styled(
             " Provider Client ",
@@ -197,6 +216,8 @@ fn render_status(f: &mut ratatui::Frame, area: Rect, app: &App) {
             format!("HTTP {}", app.http_base),
             Style::default().fg(Color::Yellow),
         ),
+        Span::raw("   "),
+        auth_span,
     ]);
     let p = Paragraph::new(line).block(Block::default().borders(Borders::BOTTOM));
     f.render_widget(p, area);
@@ -235,6 +256,8 @@ fn render_help(f: &mut ratatui::Frame, area: Rect) {
         Span::raw("  "),
         Span::styled(":http http://host:port", Style::default().fg(Color::Cyan)),
         Span::raw("  "),
+        Span::styled(":auth TOKEN|clear|show", Style::default().fg(Color::Cyan)),
+        Span::raw("  "),
         Span::styled(":loadpy ...", Style::default().fg(Color::Cyan)),
         Span::raw("  "),
         Span::styled(
@@ -256,7 +279,6 @@ fn render_input(f: &mut ratatui::Frame, area: Rect, app: &App) {
         .wrap(Wrap { trim: false });
     f.render_widget(para, area);
 
-    // place cursor
     let x = (inner.x + app.cursor as u16).min(inner.x + inner.width.saturating_sub(1));
     let y = inner.y;
     f.set_cursor(x, y);
@@ -264,35 +286,26 @@ fn render_input(f: &mut ratatui::Frame, area: Rect, app: &App) {
 
 // -------------------- Key handling --------------------
 fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
-    // --- global exits ---
     if key.modifiers.contains(KeyModifiers::CONTROL) && matches!(key.code, KeyCode::Char('c')) {
-        // Ctrl+C: exit
         return Ok(true);
-    }
-    if matches!(key.code, KeyCode::Esc) {
-        // ESC: optional exit if you want
-        // return Ok(true);
     }
 
     match key.code {
-        // ---- scrolling (output pane) ----
         KeyCode::PageUp => {
             app.autoscroll = false;
             app.scroll_top = app.scroll_top.saturating_sub(10);
         }
         KeyCode::PageDown => {
             app.scroll_top = app.scroll_top.saturating_add(10);
-            // if you want to auto-resume when near bottom, you can toggle app.autoscroll here.
         }
         KeyCode::Home => {
             app.autoscroll = false;
             app.scroll_top = 0;
         }
         KeyCode::End => {
-            app.autoscroll = true; // pin to bottom
+            app.autoscroll = true;
         }
 
-        // ---- history navigation (input line) ----
         KeyCode::Up => {
             if app.history.is_empty() {
                 return Ok(false);
@@ -315,7 +328,6 @@ fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
             let next_idx = match app.history_idx {
                 None => return Ok(false),
                 Some(i) if i + 1 >= app.history.len() => {
-                    // past the newest: clear input and reset idx
                     app.history_idx = None;
                     app.input.clear();
                     app.cursor = 0;
@@ -330,7 +342,6 @@ fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
             }
         }
 
-        // ---- input editing ----
         KeyCode::Left => {
             if app.cursor > 0 {
                 app.cursor -= 1;
@@ -354,7 +365,6 @@ fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
                 app.input.remove(pos);
             }
         }
-        // Ctrl+U = clear to start, Ctrl+K = clear to end, Ctrl+L = clear screen
         KeyCode::Char('u') if key.modifiers.contains(KeyModifiers::CONTROL) => {
             app.input.replace_range(..app.cursor, "");
             app.cursor = 0;
@@ -367,42 +377,39 @@ fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
             app.autoscroll = true;
         }
 
-        // typing (printable)
         KeyCode::Char(ch) => {
-            // ignore control-modified printable chars except Ctrl+ combos we handled above
             if !key.modifiers.contains(KeyModifiers::CONTROL) {
                 app.input.insert(app.cursor, ch);
                 app.cursor += 1;
             }
         }
 
-        // ---- submit ----
         KeyCode::Enter => {
             let line = app.input.trim().to_string();
             if line.is_empty() {
                 return Ok(false);
             }
 
-            // Echo input into output pane
             app.push_msg(format!("› {}", line));
 
-            // Save into history (de-dupe last)
             if app.history.last().map(|s| s.as_str()) != Some(line.as_str()) {
                 app.history.push(line.clone());
             }
             app.history_idx = None;
-
-            // Reset autoscroll (new content)
             app.autoscroll = true;
 
             if let Some(rest) = line.strip_prefix(':') {
-                // command mode
                 if let Err(e) = handle_command(app, rest) {
                     app.push_msg(format!("command error: {e}"));
                 }
             } else {
-                // send to TCP server
-                match send_parsed_query_line(&line, &app.addr, &mut app.stream, &mut app.reader) {
+                match send_parsed_query_line_with_auth(
+                    &line,
+                    &app.addr,
+                    &mut app.stream,
+                    &mut app.reader,
+                    &app.auth,
+                ) {
                     Ok(resp) => {
                         let parsed: ResponseEnvelope<Value> = serde_json::from_str(&resp)
                             .unwrap_or(ResponseEnvelope {
@@ -422,14 +429,12 @@ fn handle_key(app: &mut App, key: KeyEvent) -> io::Result<bool> {
                         for l in pretty.lines() {
                             app.push_msg(l.to_string());
                         }
-                        // NEW: spacer line between responses
                         app.push_msg("");
                     }
                     Err(e) => app.push_msg(format!("request failed: {e}")),
                 }
             }
 
-            // clear input after processing
             app.input.clear();
             app.cursor = 0;
         }
@@ -450,7 +455,6 @@ fn handle_command(app: &mut App, cmdline: &str) -> io::Result<()> {
 
     match cmdline {
         "q" | "quit" | "exit" => {
-            // handled by caller (we return true), but we’ll just print instruction here
             app.push_msg("Use Ctrl+C to exit.");
         }
         "help" | "h" => {
@@ -461,6 +465,9 @@ fn handle_command(app: &mut App, cmdline: &str) -> io::Result<()> {
                 "  :addr HOST:PORT               Change TCP target address (and reconnect)",
             );
             app.push_msg("  :http http://host:port        Set HTTP base for plugin ops");
+            app.push_msg("  :auth TOKEN                   Set current access token");
+            app.push_msg("  :auth clear                   Clear current access token");
+            app.push_msg("  :auth show                    Show current access token (masked)");
             app.push_msg(
                 "  :loadpy module=<mod> class=<Class> base=<project_base_dir> [name=<alias>]",
             );
@@ -495,32 +502,58 @@ fn handle_command(app: &mut App, cmdline: &str) -> io::Result<()> {
                 app.push_msg(format!("HTTP base set to {}", app.http_base));
             }
         }
+        _ if cmdline.starts_with("auth ") => {
+            let tok = cmdline.trim_start_matches("auth").trim();
+            if tok.eq_ignore_ascii_case("clear") {
+                app.clear_token();
+                app.push_msg("auth token cleared");
+            } else if tok.eq_ignore_ascii_case("show") {
+                if let Some(ref t) = app.auth.access_token {
+                    let masked = if t.len() > 8 {
+                        format!("{}…{}", &t[..4], &t[t.len() - 4..])
+                    } else {
+                        t.clone()
+                    };
+                    app.push_msg(format!("auth token: {}", masked));
+                } else {
+                    app.push_msg("no auth token set");
+                }
+            } else if !tok.is_empty() {
+                app.set_token(tok.to_string());
+                app.push_msg("auth token set");
+            } else {
+                app.push_msg("Usage: :auth TOKEN | :auth clear | :auth show");
+            }
+        }
         _ if cmdline.starts_with("loadpy ") => {
             let args = cmdline.trim_start_matches("loadpy").trim();
             let kv = parse_kv_args(args);
 
             let url = format!("{}/plugins/load", app.http_base);
+            let mut req = app.http.post(&url);
+
+            // if we have a token, add it to the HTTP request too
+            if let Some(ref tok) = app.auth.access_token {
+                req = req.bearer_auth(tok);
+            }
+
             let resp = if let (Some(module), Some(class), Some(base)) =
                 (kv.get("module"), kv.get("class"), kv.get("base"))
             {
-                app.http
-                    .post(&url)
-                    .json(&serde_json::json!({
-                        "module": module,
-                        "class": class,
-                        "name": kv.get("name"),
-                        "project_base_dir": base
-                    }))
-                    .send()
+                req.json(&serde_json::json!({
+                    "module": module,
+                    "class": class,
+                    "name": kv.get("name"),
+                    "project_base_dir": base
+                }))
+                .send()
             } else if let (Some(file), Some(class)) = (kv.get("file"), kv.get("class")) {
-                app.http
-                    .post(&url)
-                    .json(&serde_json::json!({
-                        "file": file,
-                        "class": class,
-                        "name": kv.get("name")
-                    }))
-                    .send()
+                req.json(&serde_json::json!({
+                    "file": file,
+                    "class": class,
+                    "name": kv.get("name")
+                }))
+                .send()
             } else {
                 app.push_msg("Usage:\n  :loadpy module=<mod> class=<Class> base=<project_base_dir> [name=<alias>]\n  :loadpy file=<abs.py> class=<Class> [name=<alias>]");
                 return Ok(());
@@ -568,6 +601,14 @@ fn history_path() -> PathBuf {
     p
 }
 
+fn token_path() -> PathBuf {
+    let mut p = dirs::data_local_dir().unwrap_or_else(|| std::env::current_dir().unwrap());
+    p.push("clap-shell");
+    std::fs::create_dir_all(&p).ok();
+    p.push("token.txt");
+    p
+}
+
 fn load_history() -> Vec<String> {
     use std::fs::File;
     use std::io::Read;
@@ -591,6 +632,37 @@ fn save_history(hist: &[String]) {
     if let Ok(mut f) = File::create(history_path()) {
         for l in hist {
             let _ = writeln!(f, "{l}");
+        }
+    }
+}
+
+fn load_token() -> AuthConfig {
+    use std::fs::File;
+    use std::io::Read;
+
+    let p = token_path();
+    if let Ok(mut f) = File::open(p) {
+        let mut s = String::new();
+        if f.read_to_string(&mut s).is_ok() {
+            let t = s.trim();
+            if !t.is_empty() {
+                return AuthConfig::new(t.to_string());
+            }
+        }
+    }
+    AuthConfig::default()
+}
+
+fn save_token(auth: &AuthConfig) {
+    use std::fs::File;
+    use std::io::Write;
+
+    let p = token_path();
+    if let Ok(mut f) = File::create(p) {
+        if let Some(ref tok) = auth.access_token {
+            let _ = writeln!(f, "{tok}");
+        } else {
+            let _ = writeln!(f, "");
         }
     }
 }
@@ -679,7 +751,7 @@ fn parse_kv_args(s: &str) -> HashMap<String, String> {
 
 //             // Retry once
 //             write_then_read(&json, stream, reader)
-//         }
+//         }:
 //     }
 // }
 
@@ -695,6 +767,7 @@ pub fn format_response_pretty(resp: &ResponseEnvelope<Value>, _use_color: bool) 
         ResponseKind::ProviderList => "ProviderList",
         ResponseKind::ProviderRequest => "ProviderRequest",
         ResponseKind::InvalidJson => "InvalidJson",
+        ResponseKind::Unauthorized => "Unauthorized",
     };
     let reqid = resp.request_id.as_deref().unwrap_or("-");
     let provider = resp.provider.as_deref().unwrap_or("-");

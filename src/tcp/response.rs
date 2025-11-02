@@ -33,6 +33,7 @@ pub enum ResponseKind {
     ProviderList,
     ProviderRequest,
     InvalidJson,
+    Unauthorized,
 }
 
 impl<T> ResponseEnvelope<T> {

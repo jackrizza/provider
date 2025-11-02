@@ -18,13 +18,18 @@ use std::{
 
 use serde_json::{self, Value};
 
+use crate::auth::AuthService;
 use crate::providers::Providers;
 use crate::query::{EntityInProvider, QueryEnvelope, QueryEnvelopePayload};
 
 // Bring the unified response into scope
 use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
 
-use crate::http::{AppState, http_list_providers, http_load_plugin, http_ping_provider};
+use crate::http::{
+    AppState,
+    files::{http_list_providers, http_load_plugin, http_ping_provider},
+    interface::init::{http_setup_form, http_setup_submit},
+};
 use crate::pyadapter::add_dirs_to_syspath;
 
 /// Simple TCP server: one thread per connection (blocking).
@@ -33,12 +38,16 @@ pub struct ProviderServer {
     http_address: String,
     pub providers: Arc<Mutex<Providers>>,
     pub db_path: String,
+    auth_service: Arc<AuthService>,
 }
 
 impl ProviderServer {
-    /// `project_base_dir` should be the parent of `provider/` or `providers/`
-    /// e.g. "/Users/augustusrizza/Code/rust/provider"
-    pub fn new(address: String, http_address: String, db_path: String) -> Self {
+    pub fn new(
+        address: String,
+        http_address: String,
+        db_path: String,
+        auth_service: AuthService,
+    ) -> Self {
         // 1) Prime Python sys.path once, at process start.
         //    This adds <base>, <base>/provider, and <base>/providers if they exist.
         if let Err(e) = add_dirs_to_syspath(".") {
@@ -57,11 +66,14 @@ impl ProviderServer {
             )),
         );
 
+        let auth_service = Arc::new(auth_service);
+
         Self {
             address,
             http_address,
             providers: Arc::new(Mutex::new(providers)),
             db_path,
+            auth_service,
         }
     }
 
@@ -70,13 +82,14 @@ impl ProviderServer {
         let state = AppState {
             db_path: self.db_path.clone(),
             providers: Arc::clone(&self.providers),
+            auth_service: Arc::clone(&self.auth_service),
         };
         let http_addr: SocketAddr = self
             .http_address
             .parse()
             .expect(format!("invalid http_address (e.g., {})", self.http_address).as_str());
 
-        // Spawn HTTP server in a dedicated Tokio runtime thread
+        // HTTP thread
         let _http_thr = {
             let state_clone = state.clone();
             thread::spawn(move || {
@@ -90,6 +103,7 @@ impl ProviderServer {
                         .route("/providers", get(http_list_providers))
                         .route("/providers/:name/ping", get(http_ping_provider))
                         .route("/plugins/load", post(http_load_plugin))
+                        .route("/setup", get(http_setup_form).post(http_setup_submit))
                         .with_state(state_clone);
 
                     info!("HTTP listening on {}", http_addr);
@@ -100,7 +114,7 @@ impl ProviderServer {
             })
         };
 
-        // Start blocking TCP listener on current thread
+        // TCP
         let listener = match TcpListener::bind(&self.address) {
             Ok(l) => l,
             Err(e) => {
@@ -116,10 +130,11 @@ impl ProviderServer {
                     let peer = stream.peer_addr().ok();
                     info!("New connection: {:?}", peer);
 
-                    // clone Arc for per-conn handler
                     let providers = Arc::clone(&self.providers);
+                    let auth_service = Arc::clone(&self.auth_service);
+
                     thread::spawn(move || {
-                        if let Err(e) = handle_connection(providers, &mut stream) {
+                        if let Err(e) = handle_connection(providers, auth_service, &mut stream) {
                             error!("connection error ({:?}): {}", peer, e);
                         }
                     });
@@ -130,11 +145,14 @@ impl ProviderServer {
     }
 }
 
-fn handle_connection(providers: Arc<Mutex<Providers>>, stream: &mut TcpStream) -> io::Result<()> {
+fn handle_connection(
+    providers: Arc<Mutex<Providers>>,
+    auth_service: Arc<AuthService>,
+    stream: &mut TcpStream,
+) -> io::Result<()> {
     let addr = stream.peer_addr()?;
     info!("TCP STREAM STARTED : {}", addr);
 
-    // Clone for reader; keep `stream` for writing.
     let reader_stream = stream.try_clone()?;
     let mut reader = BufReader::new(reader_stream);
 
@@ -145,7 +163,6 @@ fn handle_connection(providers: Arc<Mutex<Providers>>, stream: &mut TcpStream) -
         line.clear();
         let n = reader.read_line(&mut line)?;
         if n == 0 {
-            // client closed
             break;
         }
 
@@ -156,99 +173,9 @@ fn handle_connection(providers: Arc<Mutex<Providers>>, stream: &mut TcpStream) -
 
         info!("Received from {}: {}", addr, msg);
 
-        // Parse the FULL ENVELOPE with new payload variants
-        match serde_json::from_str::<QueryEnvelope<QueryEnvelopePayload>>(msg) {
-            Ok(env) => {
-                processed += 1;
-
-                match &env.query {
-                    QueryEnvelopePayload::ProviderList => {
-                        let names = providers.lock().unwrap().provider_list();
-                        let resp = ResponseEnvelope {
-                            ok: true,
-                            request_id: Some(env.request_id.clone()),
-                            kind: ResponseKind::ProviderList,
-                            provider: None,
-                            request_kind: None,
-                            result: Some(serde_json::to_value(names).unwrap_or(Value::Null)),
-                            error: None,
-                            ts_ms: now_ms(),
-                        };
-                        let line = serde_json::to_string(&resp).unwrap();
-                        writeln!(stream, "{line}")?;
-                        stream.flush()?;
-                    }
-
-                    QueryEnvelopePayload::ProviderRequest { provider, request } => {
-                        let request_kind = match request {
-                            EntityInProvider::GetEntity { .. } => "GetEntity",
-                            EntityInProvider::SearchEntities { .. } => "SearchEntities",
-                            EntityInProvider::GetEntities { .. } => "GetEntities",
-                            EntityInProvider::GetAllEntities { .. } => "GetAllEntities",
-                            EntityInProvider::GetReport { .. } => "GetReport",
-                        }
-                        .to_string();
-
-                        match providers.lock().unwrap().get_provider_mut(provider) {
-                            Some(p) => match p.fetch_entities(request.clone()) {
-                                Ok(entities) => {
-                                    let resp = ResponseEnvelope {
-                                        ok: true,
-                                        request_id: Some(env.request_id.clone()),
-                                        kind: ResponseKind::ProviderRequest,
-                                        provider: Some(provider.clone()),
-                                        request_kind: Some(request_kind),
-                                        result: Some(
-                                            serde_json::to_value(&entities).unwrap_or(Value::Null),
-                                        ),
-                                        error: None,
-                                        ts_ms: now_ms(),
-                                    };
-                                    let line = serde_json::to_string(&resp).unwrap();
-                                    writeln!(stream, "{line}")?;
-                                    stream.flush()?;
-                                }
-                                Err(e) => {
-                                    let resp = ResponseEnvelope::<Value> {
-                                        ok: false,
-                                        request_id: Some(env.request_id.clone()),
-                                        kind: ResponseKind::ProviderRequest,
-                                        provider: Some(provider.clone()),
-                                        request_kind: Some(request_kind),
-                                        result: None,
-                                        error: Some(ResponseError {
-                                            code: Some("provider_request_failed".to_string()),
-                                            message: e,
-                                        }),
-                                        ts_ms: now_ms(),
-                                    };
-                                    let line = serde_json::to_string(&resp).unwrap();
-                                    writeln!(stream, "{line}")?;
-                                    stream.flush()?;
-                                }
-                            },
-                            None => {
-                                let resp = ResponseEnvelope::<Value> {
-                                    ok: false,
-                                    request_id: Some(env.request_id.clone()),
-                                    kind: ResponseKind::ProviderRequest,
-                                    provider: Some(provider.clone()),
-                                    request_kind: Some(request_kind),
-                                    result: None,
-                                    error: Some(ResponseError {
-                                        code: Some("provider_not_found".to_string()),
-                                        message: format!("unknown provider '{provider}'"),
-                                    }),
-                                    ts_ms: now_ms(),
-                                };
-                                let line = serde_json::to_string(&resp).unwrap();
-                                writeln!(stream, "{line}")?;
-                                stream.flush()?;
-                            }
-                        };
-                    }
-                }
-            }
+        // 1) parse as raw JSON first so we can grab token
+        let raw_val: serde_json::Value = match serde_json::from_str(msg) {
+            Ok(v) => v,
             Err(e) => {
                 warn!("Invalid JSON from {}: {}  (raw: {})", addr, e, msg);
                 let resp = ResponseEnvelope::<Value> {
@@ -267,6 +194,187 @@ fn handle_connection(providers: Arc<Mutex<Providers>>, stream: &mut TcpStream) -
                 let line = serde_json::to_string(&resp).unwrap();
                 writeln!(stream, "{line}")?;
                 stream.flush()?;
+                continue;
+            }
+        };
+
+        // try to pull out request_id before we deserialize, so we can echo it on auth errors
+        let request_id = raw_val
+            .get("request_id")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
+        // 2) if auth is ON, require a token
+        if auth_service.is_enabled() {
+            // support either "token" or "access_token" on the top-level
+            let token = raw_val
+                .get("token")
+                .or_else(|| raw_val.get("access_token"))
+                .and_then(|v| v.as_str());
+
+            if let Some(token) = token {
+                match auth_service.validate_access_token(token) {
+                    Ok(user) => {
+                        // optional: log who it was
+                        info!("auth ok for {} -> {}", addr, user.email);
+                    }
+                    Err(e) => {
+                        // send unauthorized and continue
+                        let resp = ResponseEnvelope::<Value> {
+                            ok: false,
+                            request_id,
+                            kind: ResponseKind::Unauthorized,
+                            provider: None,
+                            request_kind: None,
+                            result: None,
+                            error: Some(ResponseError {
+                                code: Some("unauthorized".to_string()),
+                                message: format!("{e}"),
+                            }),
+                            ts_ms: now_ms(),
+                        };
+                        let line = serde_json::to_string(&resp).unwrap();
+                        writeln!(stream, "{line}")?;
+                        stream.flush()?;
+                        continue;
+                    }
+                }
+            } else {
+                // no token supplied
+                let resp = ResponseEnvelope::<Value> {
+                    ok: false,
+                    request_id,
+                    kind: ResponseKind::Unauthorized,
+                    provider: None,
+                    request_kind: None,
+                    result: None,
+                    error: Some(ResponseError {
+                        code: Some("missing_token".to_string()),
+                        message: "auth is enabled but no token was provided".to_string(),
+                    }),
+                    ts_ms: now_ms(),
+                };
+                let line = serde_json::to_string(&resp).unwrap();
+                writeln!(stream, "{line}")?;
+                stream.flush()?;
+                continue;
+            }
+        }
+
+        // 3) NOW deserialize into your real envelope
+        let env_res =
+            serde_json::from_value::<QueryEnvelope<QueryEnvelopePayload>>(raw_val.clone());
+        let env = match env_res {
+            Ok(e) => e,
+            Err(e) => {
+                warn!("Invalid envelope from {}: {}  (raw: {})", addr, e, msg);
+                let resp = ResponseEnvelope::<Value> {
+                    ok: false,
+                    request_id,
+                    kind: ResponseKind::InvalidJson,
+                    provider: None,
+                    request_kind: None,
+                    result: None,
+                    error: Some(ResponseError {
+                        code: Some("invalid_envelope".to_string()),
+                        message: format!("invalid envelope: {e}"),
+                    }),
+                    ts_ms: now_ms(),
+                };
+                let line = serde_json::to_string(&resp).unwrap();
+                writeln!(stream, "{line}")?;
+                stream.flush()?;
+                continue;
+            }
+        };
+
+        processed += 1;
+
+        match &env.query {
+            QueryEnvelopePayload::ProviderList => {
+                let names = providers.lock().unwrap().provider_list();
+                let resp = ResponseEnvelope {
+                    ok: true,
+                    request_id: Some(env.request_id.clone()),
+                    kind: ResponseKind::ProviderList,
+                    provider: None,
+                    request_kind: None,
+                    result: Some(serde_json::to_value(names).unwrap_or(Value::Null)),
+                    error: None,
+                    ts_ms: now_ms(),
+                };
+                let line = serde_json::to_string(&resp).unwrap();
+                writeln!(stream, "{line}")?;
+                stream.flush()?;
+            }
+
+            QueryEnvelopePayload::ProviderRequest { provider, request } => {
+                let request_kind = match request {
+                    EntityInProvider::GetEntity { .. } => "GetEntity",
+                    EntityInProvider::SearchEntities { .. } => "SearchEntities",
+                    EntityInProvider::GetEntities { .. } => "GetEntities",
+                    EntityInProvider::GetAllEntities { .. } => "GetAllEntities",
+                    EntityInProvider::GetReport { .. } => "GetReport",
+                }
+                .to_string();
+
+                match providers.lock().unwrap().get_provider_mut(provider) {
+                    Some(p) => match p.fetch_entities(request.clone()) {
+                        Ok(entities) => {
+                            let resp = ResponseEnvelope {
+                                ok: true,
+                                request_id: Some(env.request_id.clone()),
+                                kind: ResponseKind::ProviderRequest,
+                                provider: Some(provider.clone()),
+                                request_kind: Some(request_kind),
+                                result: Some(
+                                    serde_json::to_value(&entities).unwrap_or(Value::Null),
+                                ),
+                                error: None,
+                                ts_ms: now_ms(),
+                            };
+                            let line = serde_json::to_string(&resp).unwrap();
+                            writeln!(stream, "{line}")?;
+                            stream.flush()?;
+                        }
+                        Err(e) => {
+                            let resp = ResponseEnvelope::<Value> {
+                                ok: false,
+                                request_id: Some(env.request_id.clone()),
+                                kind: ResponseKind::ProviderRequest,
+                                provider: Some(provider.clone()),
+                                request_kind: Some(request_kind),
+                                result: None,
+                                error: Some(ResponseError {
+                                    code: Some("provider_request_failed".to_string()),
+                                    message: e,
+                                }),
+                                ts_ms: now_ms(),
+                            };
+                            let line = serde_json::to_string(&resp).unwrap();
+                            writeln!(stream, "{line}")?;
+                            stream.flush()?;
+                        }
+                    },
+                    None => {
+                        let resp = ResponseEnvelope::<Value> {
+                            ok: false,
+                            request_id: Some(env.request_id.clone()),
+                            kind: ResponseKind::ProviderRequest,
+                            provider: Some(provider.clone()),
+                            request_kind: Some(request_kind),
+                            result: None,
+                            error: Some(ResponseError {
+                                code: Some("provider_not_found".to_string()),
+                                message: format!("unknown provider '{provider}'"),
+                            }),
+                            ts_ms: now_ms(),
+                        };
+                        let line = serde_json::to_string(&resp).unwrap();
+                        writeln!(stream, "{line}")?;
+                        stream.flush()?;
+                    }
+                };
             }
         }
     }

@@ -10,6 +10,7 @@ use diesel::sqlite::SqliteConnection;
 
 pub mod query;
 
+pub mod auth;
 pub mod http;
 pub mod models;
 pub mod providers;

@@ -14,7 +14,8 @@ pub mod tests {
                 e
             })
             .unwrap();
-        let resp = client.get_data::<Vec<Value>>(vec![("test".into(), "provider yahoo_finance search ticker=aapl date=2020-01-01T00:00:00Z..2025-09-01T00:00:00Z".into())]);
+        let resp = client.get_data::<Vec<Value>>(vec![("test".into(),
+            "provider yahoo_finance search ticker=aapl date=2020-01-01T00:00:00Z..2025-09-01T00:00:00Z".into())]);
         println!("Response: {:?}", resp);
         assert_eq!(resp.is_ok(), true);
     }

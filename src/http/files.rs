@@ -5,25 +5,15 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
+use super::AppState;
+use crate::providers::pyprovider::PyProviderAdapter;
 use serde::Deserialize;
 use serde_json::{self, Value, json};
-use std::sync::{Arc, Mutex};
-
-use crate::providers::{Providers, pyprovider::PyProviderAdapter};
-// use crate::pyadapter::PyProviderAdapter;
-
-// =================== HTTP (AXUM) HANDLERS ===================
 
 use axum::{
     Json,
     extract::{Path, State},
 };
-
-#[derive(Clone)]
-pub struct AppState {
-    pub db_path: String,
-    pub providers: Arc<Mutex<Providers>>,
-}
 
 /// GET /providers → list providers
 pub async fn http_list_providers(State(state): State<AppState>) -> Json<Value> {

@@ -17,6 +17,7 @@ It caches external JSON in SQLite, serves DB-first, and *stitches* gaps by only 
 - [Architecture](#architecture)
 - [Quick start](#quick-start)
 - [Running the servers](#running-the-servers)
+- [Authentication](#authentication)
 - [Client shell](#client-shell)
 - [HTTP API](#http-api)
 - [Providers](#providers)
@@ -35,8 +36,8 @@ It caches external JSON in SQLite, serves DB-first, and *stitches* gaps by only 
 
 - **DB-first cache:** answers from SQLite if present; otherwise fetches upstream and persists.
 - **Stitching:** if the user asks for a range partially cached, fetch only the missing segments and union.
-- **Two protocols:**  
-  - **TCP** (request/response JSON per line) for low-overhead queries.  
+- **Two protocols:**
+  - **TCP** (request/response JSON per line) for low-overhead queries.
   - **HTTP (Axum)** for listing providers and loading Python plugins dynamically.
 - **Hot-pluggable Python providers:** add a provider at runtime (no server restart), from a module or a file path.
 - **Pretty CLI:** a small REPL client that talks TCP and can call the HTTP loader for plugins.
@@ -109,9 +110,9 @@ target/debug/main --client
 
 ## Running the servers
 
-- **TCP:** defaults to `127.0.0.1:7000`  
+- **TCP:** defaults to `127.0.0.1:7000`
   Protocol is **1 JSON line per request** and **1 JSON line per response** (see examples in the client).
-- **HTTP (Axum):** defaults to `127.0.0.1:7070`  
+- **HTTP (Axum):** defaults to `127.0.0.1:7070`
   Used to list providers and hot-load Python plugins.
 
 The server keeps a **`project_base_dir`** (configured when building `ProviderServer`) and on startup adds these directories to Python `sys.path` if they exist:
@@ -123,6 +124,102 @@ The server keeps a **`project_base_dir`** (configured when building `ProviderSer
 > This lets you organize Python plugins under `provider/` or `providers/`.
 
 ---
+
+## Authentication
+
+> **TL;DR:** start the server with `--auth` → if there are no users, it prints a `/setup` URL → open it in a browser to create the first user → every TCP/HTTP request must then include a token.
+
+The provider can run in two modes:
+
+1. **Auth disabled** (default):
+```bash
+target/debug/main --server --db provider.db
+```
+- TCP accepts all requests.
+- HTTP admin endpoints accept all requests.
+- The CLI can talk to the server without extra headers/fields.
+
+Auth enabled:
+
+```
+target/debug/main --server --db provider.db --auth
+```
+
+On startup the server checks the auth table.
+
+If it’s empty, it will log something like:
+
+Auth is ENABLED but there are no users in the database.
+Open this in a browser to create the first user: http://127.0.0.1:7070/setup
+
+Go to that URL and submit the form to create the bootstrap user (email + password).
+
+After that, the server issues access/refresh tokens and stores them in SQLite.
+
+How requests are authenticated
+
+TCP: every JSON line sent to the TCP server can include either
+
+```json
+{ "token": "<ACCESS_TOKEN>", "query": { ... } }
+```
+or
+
+```json
+{ "access_token": "<ACCESS_TOKEN>", "query": { ... } }
+```
+
+The server will reject unauthenticated requests with:
+
+```json
+{
+  "ok": false,
+  "kind": "Unauthorized",
+  "error": { "code": "unauthorized", "message": "..." }
+}
+```
+HTTP: the CLI already forwards the token to HTTP plugin endpoints as
+
+    Authorization: Bearer <ACCESS_TOKEN>
+
+Client support
+
+    Core TCP client gained an AuthConfig and
+    send_parsed_query_line_with_auth(...) so every higher-level client can
+    transparently inject tokens.
+
+    lib client (provider::client when built with --features lib-client) now has:
+
+
+```rust
+let mut client = ClientBuilder::new("127.0.0.1:7000")
+    .with_token("YOUR_ACCESS_TOKEN")
+    .connect()?;
+client.list_providers()?;
+```
+
+
+```
+CLI / TUI client got runtime commands:
+
+    :auth TOKEN       # set / switch token
+    :auth clear       # drop token
+    :auth show        # print masked token
+
+    and it persists the token next to the command history, so the next run
+    “just works.”
+```
+
+Server-side implementation notes
+
+    Auth logic lives in src/auth/ (service + repo + utils) and uses the same
+    Diesel pool as the rest of the app.
+
+    Tokens are UUID-based + timestamped; access tokens expire sooner, refresh
+    tokens last longer.
+
+    The TCP handler checks auth before dispatching to any provider, so all
+    providers automatically become “protected” once --auth is on.
 
 ## Client shell
 
@@ -373,10 +470,10 @@ cargo clean && cargo build
 ```
 
 ### `ModuleNotFoundError` when loading Python plugins
-- Ensure you load with the correct **module** and **base**:  
-  If your file is `<base>/providers/my_plugins/dummy.py`, use  
+- Ensure you load with the correct **module** and **base**:
+  If your file is `<base>/providers/my_plugins/dummy.py`, use
   `module=providers.my_plugins.dummy base=<base>`.
-- The server inserts `<base>`, `<base>/provider`, and `<base>/providers` into `sys.path`.  
+- The server inserts `<base>`, `<base>/provider`, and `<base>/providers` into `sys.path`.
   If you still see issues, load by file path instead:
   ```
   :loadpy file=/abs/path/to/providers/my_plugins/dummy.py class=Provider name=dummy

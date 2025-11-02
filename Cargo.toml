@@ -10,7 +10,7 @@ cli-client = []
 lib-client = []
 
 # Optionally set a default:
-default = ["lib-client"]
+default = ["cli-client"]
 
 
 [dependencies]
@@ -67,6 +67,13 @@ diesel_migrations = { version = "2.1", features = ["sqlite"] }  # <-- add this
 # tui
 ratatui = "0.26"
 crossterm = "0.27"
+uuid = "1.0"
+chrono = "0.4"
+rand = "0.8"
+argon2 = "0.5"
+rand_core = "0.6"
+thiserror = "1"
+
 
 # # Gate TUI deps behind feature to slim lib builds:
 # [features]
