@@ -6,6 +6,7 @@ Copyright (c) 2025 Augustus Rizza
 */
 
 use axum::Router;
+use axum::routing::get_service;
 use axum::routing::{get, post};
 use log::{error, info, warn};
 use std::net::SocketAddr;
@@ -18,13 +19,20 @@ use std::{
 
 use serde_json::{self, Value};
 
+use http::StatusCode;
+use http::{HeaderValue, header::CACHE_CONTROL};
+use tower_http::{
+    compression::CompressionLayer,
+    services::{ServeDir, ServeFile},
+    set_header::SetResponseHeaderLayer,
+};
+
 use crate::auth::AuthService;
+use crate::auth::projects::ProjectService;
 use crate::providers::Providers;
 use crate::query::{EntityInProvider, QueryEnvelope, QueryEnvelopePayload};
-
 // Bring the unified response into scope
-use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
-
+use crate::auth::plugins::PluginService;
 use crate::http::{
     AppState,
     files::{http_load_plugin, http_ping_provider},
@@ -33,11 +41,20 @@ use crate::http::{
         init::{http_setup_form, http_setup_submit},
         landing::http_landing,
         login::{http_login_form, http_login_submit, http_signout},
+        plugins::http_plugins,
+        plugins::{http_plugins_delete, http_plugins_new, http_plugins_save, http_plugins_update},
+        projects::{
+            http_project_add_user, http_project_detail, http_projects, http_projects_new_form,
+            http_projects_new_submit,
+        },
         providers::http_list_providers,
+        users::{http_users, http_users_add, http_users_delete},
     },
     require_login,
+    roles::require_role,
 };
 use crate::pyadapter::add_dirs_to_syspath;
+use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
 
 /// Simple TCP server: one thread per connection (blocking).
 pub struct ProviderServer {
@@ -86,15 +103,41 @@ impl ProviderServer {
 
     /// Start HTTP (Axum) in its own Tokio runtime thread, then run TCP accept loop.
     pub fn listen(&mut self) {
+        let pool = crate::establish_connection(&self.db_path);
+        let project_service = ProjectService::new(pool.clone());
+        let plugin_service = PluginService::new(pool.clone());
         let state = AppState {
             db_path: self.db_path.clone(),
             providers: Arc::clone(&self.providers),
             auth_service: Arc::clone(&self.auth_service),
+            project_service,
+            plugin_service,
         };
         let http_addr: SocketAddr = self
             .http_address
             .parse()
             .expect(format!("invalid http_address (e.g., {})", self.http_address).as_str());
+
+        let static_files = get_service(
+            ServeDir::new("./www").append_index_html_on_directories(true), // /static/ -> /static/index.html if present
+        )
+        .handle_error(|err| async move {
+            log::error!("static file error: {err}");
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("static file error: {err}"),
+            )
+        });
+
+        // Optional: long-cache immutable assets (tweak to your needs)
+        let cache_static: SetResponseHeaderLayer<HeaderValue> =
+            SetResponseHeaderLayer::if_not_present(
+                CACHE_CONTROL,
+                "public, max-age=31536000, immutable".parse().unwrap(),
+            );
+
+        // Optional: gzip/deflate/br for static
+        let compression = CompressionLayer::new();
 
         // HTTP thread
         let _http_thr = {
@@ -109,23 +152,59 @@ impl ProviderServer {
                     use axum::middleware;
 
                     let public = Router::new()
+                        // redirect to login page
+                        // .route("/", get(http_setup_form))
                         // setup is public ONLY when no users; handler will deal with that
-                        .route("/", get(http_landing))
                         .route("/setup", get(http_setup_form).post(http_setup_submit))
                         .route("/login", get(http_login_form).post(http_login_submit))
-                        .route("/sign-out", get(http_signout));
+                        .route("/sign-out", get(http_signout))
+                        .nest_service("/cdn", static_files);
+                    // .layer(cache_static);
+                    // .layer(compression);
 
-                    let protected = Router::new()
+                    // 1) admin router: only the role check lives here
+                    let admin = Router::new()
+                        .route("/users", get(http_users).post(http_users_add))
+                        .route("/users/:id/delete", post(http_users_delete))
                         .route("/providers", get(http_list_providers))
+                        // admin still needs admin-role check
+                        .route_layer(middleware::from_fn_with_state(
+                            state_clone.clone(),
+                            require_role,
+                        ));
+
+                    // 2) protected router: build routes...
+                    let protected = Router::new()
+                        // landing/dashboard
+                        .route("/", get(http_landing))
+                        // projects
+                        .route("/projects", get(http_projects))
+                        .route("/projects/new", get(http_projects_new_form))
+                        .route("/projects/new", post(http_projects_new_submit))
+                        .route("/projects/:id", get(http_project_detail))
+                        .route("/projects/:id/users", post(http_project_add_user))
+                        // providers
                         .route("/providers/:name/ping", get(http_ping_provider))
-                        .route("/plugins/load", post(http_load_plugin))
+                        // account
                         .route("/my-account", get(http_my_account))
                         .route("/my-account/refresh", post(http_my_account_refresh))
+                        // plugins
+                        .route("/plugins", get(http_plugins))
+                        .route("/plugins/load", post(http_load_plugin))
+                        .route("/plug_ins", get(http_plugins)) // page
+                        .route("/plug_ins/new", post(http_plugins_new)) // create
+                        .route("/plug_ins/:id/update", post(http_plugins_update)) // update
+                        .route("/plug_ins/:id/delete", post(http_plugins_delete)) // delete
+                        .route("/plug_ins/:id/save", post(http_plugins_save)) // save code (file content)
+                        // 👇 merge admin **before** we add require_login
+                        .merge(admin)
+                        // 👇 NOW wrap the WHOLE thing in require_login
                         .route_layer(middleware::from_fn_with_state(
                             state_clone.clone(),
                             require_login,
                         ));
 
+                    // 3) final app
                     let app = public.merge(protected).with_state(state_clone);
 
                     info!("HTTP listening on {}", http_addr);

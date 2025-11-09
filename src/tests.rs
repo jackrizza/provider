@@ -1,3 +1,9 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
 #[cfg(all(test, feature = "lib-client"))]
 pub mod tests {
     use serde_json::Value;

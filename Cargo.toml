@@ -74,6 +74,10 @@ argon2 = "0.5"
 rand_core = "0.6"
 thiserror = "1"
 maud = "0.27.0"
+tower = "0.5.2"
+tower-http = { version = "0.5", features = ["fs","compression-gzip", "set-header"] }
+http = "1"
+nanoid = "0.4.0"
 # # Gate TUI deps behind feature to slim lib builds:
 # [features]
 # cli-client = ["dep:ratatui", "dep:crossterm"]

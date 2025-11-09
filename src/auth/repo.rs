@@ -30,6 +30,15 @@ impl<'a> AuthRepo<'a> {
         Ok(res)
     }
 
+    pub fn find_email_by_id(&mut self, user_id: &str) -> Result<Option<String>, AuthError> {
+        let res = auth_dsl::auth
+            .filter(auth_dsl::id.eq(user_id))
+            .select(auth_dsl::email)
+            .first::<String>(self.conn)
+            .optional()?;
+        Ok(res)
+    }
+
     pub fn find_by_access_token(&mut self, token: &str) -> Result<Option<Auth>, AuthError> {
         let res = auth_dsl::auth
             .filter(auth_dsl::access_token.eq(token))
@@ -37,6 +46,16 @@ impl<'a> AuthRepo<'a> {
             .first::<Auth>(self.conn)
             .optional()?;
         Ok(res)
+    }
+
+    pub fn list_all(&mut self) -> diesel::QueryResult<Vec<Auth>> {
+        use crate::schema::auth::dsl::*;
+        auth.order(email.asc()).load::<Auth>(self.conn)
+    }
+
+    pub fn delete_by_id(&mut self, user_id: &str) -> diesel::QueryResult<usize> {
+        use crate::schema::auth::dsl::*;
+        diesel::delete(auth.filter(id.eq(user_id))).execute(self.conn)
     }
 
     pub fn insert(&mut self, new_auth: &NewAuth) -> Result<(), AuthError> {
@@ -75,5 +94,19 @@ impl<'a> AuthRepo<'a> {
             ))
             .execute(self.conn)?;
         Ok(())
+    }
+
+    pub fn update_role_by_email(
+        &mut self,
+        target_email: &str,
+        new_role: &str,
+    ) -> diesel::QueryResult<usize> {
+        use crate::schema::auth::dsl::*;
+        diesel::update(auth.filter(email.eq(target_email)))
+            .set((
+                role.eq(new_role),
+                updated_at.eq(chrono::Utc::now().to_rfc3339()),
+            ))
+            .execute(self.conn)
     }
 }

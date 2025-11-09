@@ -1,0 +1,55 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+#editor,
+.cm-wrap {
+    height: 60vh;
+    border: 1px solid #ddd;
+    border-radius: 8px;
+}
+
+.uk-form-stacked .uk-form-label {
+    font-weight: 600;
+}
+
+.toolbar {
+    display: flex;
+    gap: 0.5rem;
+    align-items: center;
+    margin-bottom: 0.75rem;
+}
+
+.grow {
+    flex: 1;
+}
+
+.muted {
+    color: #666;
+    font-size: 0.9rem;
+}
+
+.mono {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* Sidebar active state */
+li.uk-active > a.plugin-item {
+    font-weight: 600;
+}
+
+#plugin_list li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: center;
+}
+
+#plugin_list .plugin-delete {
+    visibility: hidden;
+}
+
+#plugin_list li:hover .plugin-delete {
+    visibility: visible;
+}

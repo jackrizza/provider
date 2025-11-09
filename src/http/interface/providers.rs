@@ -1,6 +1,13 @@
-// src/http/interface/providers.rs
+/*
 
-use crate::http::interface::render_page;
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+
+use crate::http::interface::render_page_with_user;
+use crate::models::Auth;
+use axum::extract::Extension;
 use axum::{
     Json,
     extract::{Query, State},
@@ -10,6 +17,7 @@ use maud::{Markup, html};
 use serde::Deserialize;
 
 use crate::http::AppState;
+
 // allow ?format=json
 #[derive(Deserialize)]
 pub struct ProvidersQuery {
@@ -19,6 +27,7 @@ pub struct ProvidersQuery {
 
 pub async fn http_list_providers(
     State(state): State<AppState>,
+    Extension(user): Extension<Auth>,
     Query(q): Query<ProvidersQuery>,
 ) -> Response {
     let names = state.providers.lock().unwrap().provider_list();
@@ -27,11 +36,11 @@ pub async fn http_list_providers(
         return Json(names).into_response();
     }
 
-    Html(providers_page(&names)).into_response()
+    Html(providers_page(&names, &user)).into_response()
 }
 
 /// Render the providers page as a table.
-pub fn providers_page(names: &[String]) -> String {
+pub fn providers_page(names: &[String], user: &Auth) -> String {
     let body: Markup = html! {
         div class="uk-section uk-section-muted uk-padding" {
             h2 { "Providers" }
@@ -72,5 +81,5 @@ pub fn providers_page(names: &[String]) -> String {
         }
     };
 
-    render_page("Provider – Providers", body)
+    render_page_with_user("Provider – Providers", &user, body)
 }

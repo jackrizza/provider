@@ -3,7 +3,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 Copyright (c) 2025 Augustus Rizza
 */
 
-use super::render_page;
+use super::{render_page_no_nav, render_page_with_user};
 use crate::http::AppState;
 use axum::Form;
 use axum::extract::State;
@@ -73,15 +73,15 @@ fn setup_already_done_markup() -> Markup {
 /* ---------- public builders (string) ---------- */
 
 pub fn setup_form() -> String {
-    render_page("Provider – Setup", setup_form_markup())
+    render_page_no_nav("Provider – Setup", setup_form_markup())
 }
 
 pub fn setup_done() -> String {
-    render_page("Provider – Setup done", setup_done_markup())
+    render_page_no_nav("Provider – Setup done", setup_done_markup())
 }
 
 pub fn setup_already_done() -> String {
-    render_page("Provider – Already set up", setup_already_done_markup())
+    render_page_no_nav("Provider – Already set up", setup_already_done_markup())
 }
 
 /* ---------- http handlers ---------- */
@@ -99,7 +99,7 @@ pub async fn http_setup_submit(
         Ok(_) => Html(setup_done()),
         Err(e) => {
             // show error + form again
-            let page = render_page(
+            let page = render_page_no_nav(
                 "Provider – Setup error",
                 html! {
                     div class="uk-alert-danger uk-margin-large-top" uk-alert {

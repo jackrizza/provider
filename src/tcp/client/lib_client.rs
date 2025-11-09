@@ -1,3 +1,9 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
 use std::collections::HashMap;
 use std::io::{self, BufReader};
 use std::net::TcpStream;

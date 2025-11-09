@@ -37,12 +37,62 @@ impl AuthService {
             .map_err(|e| AuthError::Other(format!("pool error: {e}")))
     }
 
+    pub fn is_admin(&self, user: &Auth) -> bool {
+        // you said you added `role: String` to auth
+        // normalize it a bit:
+        let r = user.role.to_lowercase();
+        r == "admin" || r == "superuser" || r == "owner"
+    }
+
+    pub fn get_email_from_id(&self, user_id: &str) -> Result<String, AuthError> {
+        let mut conn = self.conn()?;
+        let mut repo = AuthRepo::new(&mut conn);
+        match repo.find_email_by_id(user_id) {
+            Ok(email) => Ok(email.unwrap_or_default()),
+            Err(e) => Err(AuthError::Other(format!("db error: {e}"))),
+        }
+    }
+
+    pub fn list_users(&self) -> Result<Vec<Auth>, String> {
+        let mut conn = self.conn().map_err(|e| format!("connection error: {e}"))?;
+        let mut repo = AuthRepo::new(&mut conn);
+        repo.list_all().map_err(|e| format!("db error: {e}"))
+    }
+
+    pub fn delete_user(&self, user_id: &str) -> Result<usize, String> {
+        let mut conn = self.conn().map_err(|e| format!("connection error: {e}"))?;
+        let mut repo = AuthRepo::new(&mut conn);
+        repo.delete_by_id(user_id)
+            .map_err(|e| format!("db delete error: {e}"))
+    }
+
     /// Check if there are any users in the database
     pub fn has_any_users(&self) -> Result<bool, AuthError> {
         let mut conn = self.conn()?;
         use crate::schema::auth::dsl::*;
         let count: i64 = auth.count().get_result(&mut conn).map_err(AuthError::Db)?;
         Ok(count > 0)
+    }
+
+    pub fn create_user_with_role(
+        &self,
+        email: &str,
+        password: &str,
+        role: &str,
+    ) -> Result<(), String> {
+        // 1) create user using the SAME logic as the bootstrap / public setup
+        // this is the important part: it will HASH the password
+        self.register(email, password)
+            .map_err(|e| format!("register failed: {e}"))?;
+
+        // 2) now update the role
+        let mut conn = self.conn().map_err(|e| format!("connection error: {e}"))?;
+        let mut repo = AuthRepo::new(&mut conn);
+
+        repo.update_role_by_email(email, role)
+            .map_err(|e| format!("failed to update role: {e}"))?;
+
+        Ok(())
     }
 
     /// Register a new user (for admin dashboard, initial setup, etc.)
@@ -73,6 +123,7 @@ impl AuthService {
             state: "active".to_string(),
             last_error: "".to_string(),
             updated_at: now,
+            role: String::from("Admin"),
         };
 
         repo.insert(&new_auth)?;

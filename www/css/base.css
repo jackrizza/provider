@@ -1,0 +1,28 @@
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
+#navbar,
+#navbar-mobile {
+    width: 100%;
+    position: fixed;
+    z-index: 9999;
+    box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+}
+
+@media (max-width: 640px) {
+    .uk-overflow-auto {
+        -webkit-overflow-scrolling: touch; /* smooth iOS scroll */
+    }
+    .uk-overflow-auto > table {
+        min-width: 640px; /* or whatever fits your columns */
+        width: max-content; /* shrink-wrap to content */
+        border-collapse: collapse;
+    }
+    .uk-overflow-auto th,
+    .uk-overflow-auto td {
+        white-space: nowrap; /* prevent ugly wraps of short labels */
+    }
+}

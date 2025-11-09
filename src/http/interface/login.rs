@@ -3,7 +3,7 @@ SPDX-License-Identifier: AGPL-3.0-only
 Copyright (c) 2025 Augustus Rizza
 */
 
-use super::{render_page, render_page_no_nav};
+use super::render_page_no_nav;
 use crate::http::AppState;
 use axum::{
     extract::{Form, State},

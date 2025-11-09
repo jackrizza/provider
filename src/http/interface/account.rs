@@ -1,61 +1,56 @@
-// src/http/interface/my_account.rs
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
 
 use crate::http::AppState;
-use crate::http::interface::render_page;
+use crate::http::interface::render_page_with_user;
 use crate::models::Auth;
 use axum::extract::Extension;
+use axum::http::{HeaderValue, header};
+use axum::response::Response;
 use axum::{
     extract::State,
-    response::{Html, IntoResponse},
+    response::{Html, IntoResponse, Redirect},
 };
+use axum_extra::extract::cookie::CookieJar;
 use maud::{Markup, html}; // your auth row
 
 pub async fn http_my_account(
     State(_state): State<AppState>,
     Extension(user): Extension<Auth>,
 ) -> impl IntoResponse {
-    let body: Markup = html! {
+    let body = html! {
         div class="uk-section uk-section-muted uk-padding" {
             h2 { "My account" }
-            p { "This is the account currently signed in." }
-
             dl class="uk-description-list" {
                 dt { "Email" }
                 dd { (user.email) }
 
+                dt { "Role" }
+                dd { (user.role) }
+
                 dt { "Access token" }
                 dd {
-                    pre class="uk-background-default uk-padding-small uk-text-break" {
+                    pre id="access_token"
+                        class="uk-background-default uk-padding-small uk-text-break copy-on-dblclick"
+                        uk-tooltip="Click to Copy" {
                         (user.access_token)
                     }
                 }
-
-                dt { "Refresh token" }
-                dd {
-                    @if !user.refresh_token.is_empty() {
-                        pre class="uk-background-default uk-padding-small uk-text-break" {
-                            (user.refresh_token)
-                        }
-                    } @else {
-                        em { "none" }
-                    }
-                }
             }
-
             form class="uk-margin-top" method="post" action="/my-account/refresh" {
-                button class="uk-button uk-button-primary" type="submit" {
-                    "Refresh token"
-                }
+                button class="uk-button uk-button-primary" type="submit" { "Refresh token" }
             }
         }
+
+        script defer src="/cdn/js/click_to_copy.js" {}
     };
 
-    Html(render_page("Provider – My account", body))
+    Html(render_page_with_user("Provider – My account", &user, body))
 }
-
-use axum::http::{HeaderValue, header};
-use axum::response::Response;
-use axum_extra::extract::cookie::CookieJar;
 
 pub async fn http_my_account_refresh(
     State(state): State<AppState>,
@@ -71,55 +66,8 @@ pub async fn http_my_account_refresh(
     // 2) ask auth service for a fresh pair
     match state.auth_service.refresh_access_token(&current) {
         Ok(tokens) => {
-            // build updated user to show (email stays same)
-            let refreshed_user = Auth {
-                access_token: tokens.access_token.clone(),
-                refresh_token: tokens.refresh_token.clone(),
-                ..user
-            };
-
-            // build alert + page
-            let body: Markup = html! {
-                div class="uk-section uk-section-muted uk-padding" {
-                    div class="uk-alert-success" uk-alert {
-                        a class="uk-alert-close" uk-close {}
-                        p { "Token refreshed." }
-                    }
-                    h2 { "My account" }
-                    dl class="uk-description-list" {
-                        dt { "Email" }
-                        dd { (refreshed_user.email) }
-
-                        dt { "Access token" }
-                        dd {
-                            pre class="uk-background-default uk-padding-small uk-text-break" {
-                                (refreshed_user.access_token)
-                            }
-                        }
-
-                        dt { "Refresh token" }
-                        dd {
-                            @if !refreshed_user.refresh_token.is_empty() {
-                                pre class="uk-background-default uk-padding-small uk-text-break" {
-                                    (refreshed_user.refresh_token)
-                                }
-                            } @else {
-                                em { "none" }
-                            }
-                        }
-                    }
-
-                    form class="uk-margin-top" method="post" action="/my-account/refresh" {
-                        button class="uk-button uk-button-primary" type="submit" {
-                            "Refresh token"
-                        }
-                    }
-                }
-            };
-
-            // set new cookie
-            let mut resp: Response =
-                Html(render_page("Provider – My account", body)).into_response();
+            // success → redirect back to /my-account, but set new cookie
+            let mut resp: Response = Redirect::to("/my-account").into_response();
             let cookie = format!(
                 "provider_auth={}; Path=/; HttpOnly; SameSite=Lax",
                 tokens.access_token
@@ -138,20 +86,16 @@ pub async fn http_my_account_refresh(
                         a class="uk-alert-close" uk-close {}
                         p { (format!("Could not refresh token: {e}")) }
                     }
-                    ( // reuse the normal layout
-                        html! {
-                            h2 { "My account" }
-                            p { "Try signing out and back in." }
-                            form class="uk-margin-top" method="post" action="/my-account/refresh" {
-                                button class="uk-button uk-button-primary" type="submit" {
-                                    "Retry"
-                                }
-                            }
+                    h2 { "My account" }
+                    p { "Try signing out and back in." }
+                    form class="uk-margin-top" method="post" action="/my-account/refresh" {
+                        button class="uk-button uk-button-primary" type="submit" {
+                            "Retry"
                         }
-                    )
+                    }
                 }
             };
-            Html(render_page("Provider – My account", body)).into_response()
+            Html(render_page_with_user("Provider – My account", &user, body)).into_response()
         }
     }
 }

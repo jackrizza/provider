@@ -7,10 +7,13 @@ Copyright (c) 2025 Augustus Rizza
 
 pub mod files;
 pub mod interface;
+pub mod roles;
 
 use std::sync::{Arc, Mutex};
 
 use crate::auth::AuthService;
+use crate::auth::plugins::PluginService;
+use crate::auth::projects::ProjectService;
 use crate::models::Auth;
 use crate::providers::Providers;
 // use crate::pyadapter::PyProviderAdapter;
@@ -29,6 +32,8 @@ pub struct AppState {
     pub db_path: String,
     pub providers: Arc<Mutex<Providers>>,
     pub auth_service: Arc<AuthService>,
+    pub project_service: ProjectService,
+    pub plugin_service: PluginService,
 }
 
 pub async fn require_login(

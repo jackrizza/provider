@@ -1,4 +1,9 @@
-// The TUI/CLI lives under a feature; usually used by the bin (main.rs)
+/*
+
+SPDX-License-Identifier: AGPL-3.0-only
+Copyright (c) 2025 Augustus Rizza
+
+*/
 #[cfg(all(feature = "cli-client", feature = "lib-client"))]
 compile_error!("Enable only ONE of: `cli-client` OR `lib-client`.");
 

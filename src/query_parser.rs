@@ -5,7 +5,6 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
-
 use crate::query::{EntityFilter, EntityInProvider, QueryEnvelope, QueryEnvelopePayload};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -23,6 +22,7 @@ pub fn parse_line_to_envelope(
         v: version,
         auth,
         query: payload,
+        project_id: None,
         ts_ms: Some(now_ms()),
     })
 }
@@ -199,7 +199,9 @@ pub fn parse_line_to_payload(line: &str) -> Result<QueryEnvelopePayload, String>
 
 fn parse_report_url_arg(args: &str) -> Result<String, String> {
     if args.is_empty() {
-        return Err("usage: provider <name> report url=<URL> | provider <name> report <URL>".into());
+        return Err(
+            "usage: provider <name> report url=<URL> | provider <name> report <URL>".into(),
+        );
     }
 
     // 1) Accept key=value tokens (url=...)

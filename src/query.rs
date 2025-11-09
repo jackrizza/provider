@@ -14,6 +14,7 @@ pub struct QueryEnvelope<T = QueryEnvelopePayload> {
     pub v: Option<u16>,
     pub auth: Option<String>,
     pub query: T,
+    pub project_id: Option<String>,
     pub ts_ms: Option<u64>,
 }
 
