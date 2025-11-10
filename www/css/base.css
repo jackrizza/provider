@@ -4,12 +4,30 @@ SPDX-License-Identifier: AGPL-3.0-only
 Copyright (c) 2025 Augustus Rizza
 
 */
+
+body {
+    min-height: 100vh;
+}
+
 #navbar,
 #navbar-mobile {
     width: 100%;
     position: fixed;
     z-index: 9999;
     box-shadow: 0 5px 15px rgba(0, 0, 0, 0.08);
+}
+
+.center-parent {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+}
+
+.center-child {
+    min-width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
 }
 
 @media (max-width: 640px) {

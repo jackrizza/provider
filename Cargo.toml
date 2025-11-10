@@ -28,6 +28,7 @@ diesel = { version = "2.2.0", features = [
     "sqlite",
     "returning_clauses_for_sqlite_3_35",
     "r2d2",
+    "chrono"
 ] }
 r2d2 = "0.8"
 # build libsqlite3 as part of the build process

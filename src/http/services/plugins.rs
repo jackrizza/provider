@@ -12,20 +12,23 @@ use crate::schema::*;
 use chrono::Utc;
 
 // Bring the table DSL modules into scope:
+use super::logs::LogService;
 use crate::schema::plugin_file_content::dsl as pfc;
 use crate::schema::plugin_nodes::dsl as pn;
 use crate::schema::plugins::dsl as pl;
+use std::sync::{Arc, Mutex};
 
 pub type DbPool = diesel::r2d2::Pool<diesel::r2d2::ConnectionManager<SqliteConnection>>;
 
 #[derive(Clone)]
 pub struct PluginService {
+    log_service: Arc<Mutex<LogService>>,
     pool: DbPool,
 }
 
 impl PluginService {
-    pub fn new(pool: DbPool) -> Self {
-        Self { pool }
+    pub fn new(pool: DbPool, log_service: Arc<Mutex<LogService>>) -> Self {
+        Self { log_service, pool }
     }
 
     fn conn(

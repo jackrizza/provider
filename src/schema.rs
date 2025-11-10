@@ -35,7 +35,6 @@ diesel::table! {
         content -> Binary,
     }
 }
-
 diesel::table! {
     // use the actual primary key your FTS uses; many folks use `rowid`
     code_fts (rowid) {
@@ -135,6 +134,18 @@ diesel::table! {
         description -> Text,
         created_at -> Text,
         updated_at -> Text,
+    }
+}
+
+diesel::table! {
+    logs (id) {
+        id -> Nullable<Text>,
+        user_id -> Nullable<Text>,
+        category -> Nullable<Text>,
+        subcategory -> Nullable<Text>,
+        timestamp -> Timestamp,
+        level -> Text,
+        message -> Text,
     }
 }
 
@@ -275,6 +286,7 @@ diesel::allow_tables_to_appear_in_same_query!(
     group_members,
     group_providers,
     groups,
+    logs,
     node,
     path_cache,
     plugin_file_content,

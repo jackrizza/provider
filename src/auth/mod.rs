@@ -7,8 +7,6 @@ Copyright (c) 2025 Augustus Rizza
 
 pub mod acl;
 pub mod errors;
-pub mod plugins;
-pub mod projects;
 pub mod repo;
 pub mod service;
 pub mod utils;

@@ -24,6 +24,10 @@ pub struct LoginForm {
 fn login_form_markup() -> Markup {
     html! {
         div class="uk-card uk-card-default uk-card-body uk-border-rounded uk-box-shadow-small uk-margin-large-top uk-width-1-2@m" {
+            h1 class="uk-heading-small" {
+                img src="/cdn/images/logo.png" alt="Logo" width="64" height="64" class="uk-margin-small-right" {}
+                "Provider"
+            }
             h3 class="uk-card-title" { "Sign in" }
             form class="uk-form-stacked" method="post" action="/login" {
                 div class="uk-margin" {

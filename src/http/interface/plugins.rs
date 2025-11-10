@@ -6,7 +6,7 @@ Copyright (c) 2025 Augustus Rizza
 */
 use crate::http::AppState;
 use crate::http::interface::render_page_with_user;
-use crate::models::Auth;
+use crate::models::{Auth, Project};
 
 use axum::Extension;
 use axum::http::StatusCode;
@@ -28,10 +28,12 @@ pub async fn http_plugins(
     // If `Auth.id` is Option<String>, keep this line; if it's String, use `let uid = user.id.as_str();`
     let uid: &str = user.id.as_deref().unwrap_or("");
 
-    let projects = state
+    let (my, shared) = state
         .project_service
         .list_projects_for_user(&user)
         .unwrap_or_default();
+
+    let projects: Vec<Project> = my.into_iter().chain(shared.into_iter()).collect();
 
     let plugins = state
         .plugin_service

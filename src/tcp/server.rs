@@ -28,14 +28,11 @@ use tower_http::{
 };
 
 use crate::auth::AuthService;
-use crate::auth::projects::ProjectService;
 use crate::providers::Providers;
 use crate::query::{EntityInProvider, QueryEnvelope, QueryEnvelopePayload};
 // Bring the unified response into scope
-use crate::auth::plugins::PluginService;
 use crate::http::{
     AppState,
-    files::{http_load_plugin, http_ping_provider},
     interface::{
         account::{http_my_account, http_my_account_refresh},
         init::{http_setup_form, http_setup_submit},
@@ -51,9 +48,14 @@ use crate::http::{
         users::{http_users, http_users_add, http_users_delete},
     },
     require_login,
-    roles::require_role,
+    services::files::{http_load_plugin, http_ping_provider},
+    services::logs::LogService,
+    services::plugins::PluginService,
+    services::projects::ProjectService,
+    services::roles::require_role,
 };
 use crate::pyadapter::add_dirs_to_syspath;
+use crate::schema::auth;
 use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
 use axum::{
     http::{HeaderMap, header},
@@ -111,22 +113,22 @@ impl ProviderServer {
             )),
         );
 
-        let auth_service = Arc::new(auth_service);
-
         Self {
             address,
             http_address,
             providers: Arc::new(Mutex::new(providers)),
             db_path,
-            auth_service,
+            auth_service: Arc::new(auth_service),
         }
     }
 
     /// Start HTTP (Axum) in its own Tokio runtime thread, then run TCP accept loop.
     pub fn listen(&mut self) {
         let pool = crate::establish_connection(&self.db_path);
-        let project_service = ProjectService::new(pool.clone());
-        let plugin_service = PluginService::new(pool.clone());
+
+        let log_service = Arc::new(Mutex::new(LogService::new(pool.clone())));
+        let project_service = ProjectService::new(pool.clone(), log_service.clone());
+        let plugin_service = PluginService::new(pool.clone(), log_service.clone());
         let state = AppState {
             db_path: self.db_path.clone(),
             providers: Arc::clone(&self.providers),

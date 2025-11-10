@@ -293,3 +293,27 @@ pub struct NewPluginPathCache<'a> {
     pub node_id: i32,
     pub abs_path: &'a str,
 }
+
+#[derive(Debug, Selectable, Queryable)]
+#[diesel(table_name = crate::schema::logs)]
+pub struct Log {
+    pub id: Option<String>,
+    pub user_id: Option<String>,
+    pub category: Option<String>,
+    pub subcategory: Option<String>,
+    pub timestamp: chrono::NaiveDateTime,
+    pub level: String,
+    pub message: String,
+}
+
+#[derive(Debug, Insertable)]
+#[diesel(table_name = crate::schema::logs)]
+pub struct NewLog {
+    pub id: String,
+    pub user_id: String,
+    pub category: String,
+    pub subcategory: String,
+    pub timestamp: chrono::NaiveDateTime,
+    pub level: String,
+    pub message: String,
+}

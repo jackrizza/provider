@@ -31,7 +31,7 @@ pub async fn http_projects(
     axum::Extension(user): axum::Extension<Auth>,
 ) -> impl IntoResponse {
     // get projects owned by or shared with this user
-    let list = state
+    let (my_list, shared_list) = state
         .project_service
         .list_projects_for_user(&user)
         .unwrap_or_default();
@@ -43,6 +43,7 @@ pub async fn http_projects(
             a class="uk-button uk-button-primary uk-margin-bottom" href="/projects/new" { "New project" }
 
             div class="uk-overflow-auto" {
+                h3 { "My Projects" }
                 table class="uk-table uk-table-divider uk-table-striped" {
                     thead {
                         tr {
@@ -53,7 +54,30 @@ pub async fn http_projects(
                         }
                     }
                     tbody {
-                        @for p in list {
+                        @for p in my_list {
+                            tr {
+                                td { (p.name) }
+                                td { (state.auth_service.get_email_from_id(&p.owner_id).unwrap_or_default()) }
+                                td { (p.visibility) }
+                                td {
+                                    a class="uk-button uk-button-default uk-button-small" href={(format!("/projects/{}", p.id.unwrap_or_default()))} { "Open" }
+                                }
+                            }
+                        }
+                    }
+                }
+                h3 { "Shared Projects" }
+                table class="uk-table uk-table-divider uk-table-striped" {
+                    thead {
+                        tr {
+                            th { "Name" }
+                            th { "Owner" }
+                            th { "Visibility" }
+                            th { "Actions" }
+                        }
+                    }
+                    tbody {
+                        @for p in shared_list {
                             tr {
                                 td { (p.name) }
                                 td { (state.auth_service.get_email_from_id(&p.owner_id).unwrap_or_default()) }
@@ -135,6 +159,7 @@ pub async fn http_projects_new_submit(
         .collect::<Vec<_>>();
 
     if let Err(e) = state.project_service.create_project_with_providers(
+        &user,
         &id,
         &form.name,
         &form.description,
@@ -170,7 +195,7 @@ pub async fn http_project_detail(
     Path(project_id): Path<String>,
 ) -> impl IntoResponse {
     // load project
-    let project = match state.project_service.get_project(&project_id) {
+    let project = match state.project_service.get_project(&user, &project_id) {
         Ok(Some(p)) => p,
         Ok(None) => {
             // 404 page
@@ -213,7 +238,7 @@ pub async fn http_project_detail(
     // list current project users
     let members = state
         .project_service
-        .list_project_users(&project_id)
+        .list_project_users(&user, &project_id)
         .unwrap_or_default();
 
     // list all users (for the select); only if admin/owner
@@ -224,75 +249,96 @@ pub async fn http_project_detail(
     };
 
     let body: Markup = html! {
-        div class="uk-section uk-section-muted uk-padding" {
-            h2 { (format!("Project: {}", project.name)) }
-            p { (project.description) }
-
-            h3 { "Members" }
-            div class="uk-overflow-auto" {
-                table class="uk-table uk-table-divider uk-table-small" {
-                    thead {
-                        tr {
-                            th { "User" }
-                            th { "Role" }
-                        }
-                    }
-                    tbody {
-                        @for m in &members {
-                            tr {
-                                td { (state.auth_service.get_email_from_id(&m.user_id).unwrap_or_default()) }
-                                td { (m.role) }
-                            }
-                        }
-                        @if members.is_empty() {
-                            tr {
-                                td colspan="2" {
-                                    em { "No members yet." }
-                                }
-                            }
-                        }
+        div class="uk-card uk-card-default" {
+            div class="uk-card-header" {
+                div class="uk-grid-small uk-flex-middle" uk-grid {
+                    div class="uk-width-expand" {
+                        h3 class="uk-card-title uk-margin-remove-bottom" { (project.name) }
+                        p class="uk-text-meta uk-margin-remove-top" { (project.description) }
                     }
                 }
             }
 
-            @if can_edit {
-                h3 { "Add member" }
-                form class="uk-form-stacked uk-margin" method="post" action={(format!("/projects/{}/users", project_id))} {
-                    div class="uk-margin" {
-                        label class="uk-form-label" for="user_id" { "User" }
-                        div class="uk-form-controls" {
-                            select class="uk-select" name="user_id" id="user_id" required {
-                                option value="" { "-- select user --" }
-                                @for u in &all_users {
-                                    // assuming u.email exists
-                                    option value={(u.id.as_deref().unwrap_or(""))} {
-                                        (u.email)
-                                        @if state.auth_service.is_admin(u) {
-                                            " (admin)"
-                                        }
+
+            div class="uk-card-body" {
+                h3 { "Members" }
+                div class="uk-overflow-auto" {
+                    table class="uk-table uk-table-divider uk-table-small" {
+                        thead {
+                            tr {
+                                th { "User" }
+                                th { "Role" }
+                            }
+                        }
+                        tbody {
+                            @for m in &members {
+                                tr {
+                                    td { (state.auth_service.get_email_from_id(&m.user_id).unwrap_or_default()) }
+                                    td { (m.role) }
+                                }
+                            }
+                            @if members.is_empty() {
+                                tr {
+                                    td colspan="2" {
+                                        em { "No members yet." }
                                     }
                                 }
                             }
                         }
                     }
-                    div class="uk-margin" {
-                        label class="uk-form-label" for="role" { "Role" }
-                        div class="uk-form-controls" {
-                            select class="uk-select" name="role" id="role" {
-                                option value="editor" { "Editor" }
-                                option value="viewer" { "Viewer" }
+                }
+
+                @if can_edit {
+                    h3 {  }
+                    ul uk-accordion {
+                        li {
+                            a class="uk-accordion-title" {
+                                ("Add member")
+                            }
+                            div class="uk-accordion-content" {
+                                form class="uk-form-stacked uk-margin" method="post" action={(format!("/projects/{}/users", project_id))} {
+                                    div class="uk-margin" {
+                                        label class="uk-form-label" for="user_id" { "User" }
+                                        div class="uk-form-controls" {
+                                            select class="uk-select" name="user_id" id="user_id" required {
+                                                option value="" { "-- select user --" }
+                                                @for u in &all_users {
+                                                    // assuming u.email exists
+                                                    option value={(u.id.as_deref().unwrap_or(""))} {
+                                                        (u.email)
+                                                        @if state.auth_service.is_admin(u) {
+                                                            " (admin)"
+                                                        }
+                                                    }
+                                                }
+                                            }
+                                        }
+                                    }
+                                    div class="uk-margin" {
+                                        label class="uk-form-label" for="role" { "Role" }
+                                        div class="uk-form-controls" {
+                                            select class="uk-select" name="role" id="role" {
+                                                option value="editor" { "Editor" }
+                                                option value="viewer" { "Viewer" }
+                                            }
+                                        }
+                                    }
+                                    div class="uk-margin" {
+                                        button class="uk-button uk-button-primary" type="submit" { "Add to project" }
+                                    }
+                                }
                             }
                         }
                     }
-                    div class="uk-margin" {
-                        button class="uk-button uk-button-primary" type="submit" { "Add to project" }
+
+                } @else {
+                    div class="uk-alert-primary" uk-alert {
+                        p { "You can view this project but not manage members." }
                     }
                 }
-            } @else {
-                div class="uk-alert-primary" uk-alert {
-                    p { "You can view this project but not manage members." }
-                }
             }
+
+
         }
     };
 
@@ -312,7 +358,7 @@ pub async fn http_project_add_user(
     Form(form): Form<AddProjectUserForm>,
 ) -> impl IntoResponse {
     // get project
-    let project = match state.project_service.get_project(&project_id) {
+    let project = match state.project_service.get_project(&user, &project_id) {
         Ok(Some(p)) => p,
         _ => return Redirect::to("/projects").into_response(),
     };
@@ -326,9 +372,10 @@ pub async fn http_project_add_user(
 
     let role = form.role.unwrap_or_else(|| "editor".to_string());
 
-    if let Err(e) = state
-        .project_service
-        .add_user_to_project(&project_id, &form.user_id, &role)
+    if let Err(e) =
+        state
+            .project_service
+            .add_user_to_project(&user, &project_id, &form.user_id, &role)
     {
         // on error, just go back to detail for now
         eprintln!("add_user_to_project error: {e}");

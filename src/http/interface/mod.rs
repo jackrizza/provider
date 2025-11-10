@@ -8,6 +8,7 @@ Copyright (c) 2025 Augustus Rizza
 pub mod account;
 pub mod init;
 pub mod landing;
+pub mod log;
 pub mod login;
 pub mod plugins;
 pub mod projects;
@@ -71,9 +72,11 @@ pub fn render_page_no_nav(title: &str, core: Markup) -> String {
                 script src="https://cdn.jsdelivr.net/npm/uikit@3.19.4/dist/js/uikit-icons.min.js" {}
                 script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.1/dist/chart.umd.min.js" {}
             }
-            body class="uk-dark" {
-                div class="uk-container uk-dark" {
-                    (core)
+            body class="uk-background-primary uk-padding uk-panel" {
+                div class="uk-container center-parent" {
+                    div class="center-child" {
+                        (core)
+                    }
                 }
             }
         }
@@ -103,6 +106,7 @@ pub fn navbar(user: Option<&Auth>) -> Markup {
                     // LEFT
                     div class="uk-navbar-left" {
                         a class="uk-navbar-item uk-logo" href="/" {
+                            img src="/cdn/images/logo.png" width="32" height="32" {}
                             "Provider"
                         }
 
@@ -215,7 +219,10 @@ pub fn navbar_mobile(user: Option<&Auth>) -> Markup {
 
                     // LEFT: Logo
                     div class="uk-navbar-left" {
-                        a class="uk-navbar-item uk-logo" href="/" { "Provider" }
+                        a class="uk-navbar-item uk-logo" href="/" {
+                            img src="/cdn/images/logo.png" width="32" height="32" {}
+                            "Provider"
+                        }
                     }
 
                     // RIGHT: Toggle button

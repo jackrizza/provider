@@ -5,17 +5,18 @@ Copyright (c) 2025 Augustus Rizza
 
 */
 
-pub mod files;
 pub mod interface;
-pub mod roles;
+pub mod services;
 
 use std::sync::{Arc, Mutex};
 
 use crate::auth::AuthService;
-use crate::auth::plugins::PluginService;
-use crate::auth::projects::ProjectService;
 use crate::models::Auth;
 use crate::providers::Providers;
+use services::logs::LogService;
+use services::plugins::PluginService;
+use services::projects::ProjectService;
+
 // use crate::pyadapter::PyProviderAdapter;
 
 use axum::{
