@@ -1,4 +1,4 @@
-# Provider
+![logo](iconsets/primary_with_header.png)
 
 A tiny **data provider hub** with:
 - a **TCP server** for queries,

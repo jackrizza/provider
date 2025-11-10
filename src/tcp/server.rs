@@ -55,6 +55,27 @@ use crate::http::{
 };
 use crate::pyadapter::add_dirs_to_syspath;
 use crate::tcp::response::{ResponseEnvelope, ResponseError, ResponseKind};
+use axum::{
+    http::{HeaderMap, header},
+    response::IntoResponse,
+};
+async fn get_favicon() -> impl IntoResponse {
+    // Path is resolved at compile time from the crate root.
+    // Adjust if your file lives elsewhere.
+    const ICON: &[u8] = include_bytes!(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/www/favicon/favicon.ico"
+    ));
+
+    let mut headers = HeaderMap::new();
+    headers.insert(header::CONTENT_TYPE, "image/x-icon".parse().unwrap());
+    headers.insert(
+        header::CACHE_CONTROL,
+        "public, max-age=31536000, immutable".parse().unwrap(),
+    );
+
+    (headers, ICON).into_response()
+}
 
 /// Simple TCP server: one thread per connection (blocking).
 pub struct ProviderServer {
@@ -158,7 +179,9 @@ impl ProviderServer {
                         .route("/setup", get(http_setup_form).post(http_setup_submit))
                         .route("/login", get(http_login_form).post(http_login_submit))
                         .route("/sign-out", get(http_signout))
+                        .route("/favicon.ico", get(get_favicon))
                         .nest_service("/cdn", static_files);
+
                     // .layer(cache_static);
                     // .layer(compression);
 
